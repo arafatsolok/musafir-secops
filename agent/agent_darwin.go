@@ -57,6 +57,9 @@ func main() {
 		gatewayURL = "http://localhost:8080"
 	}
 
+	// Start macOS Endpoint Security monitoring
+	go processMacOSEvents()
+
 	// Generate macOS-specific event
 	evt := generateDarwinEvent()
 	data, _ := json.Marshal(evt)
@@ -64,4 +67,7 @@ func main() {
 
 	// Send to gateway (same HTTP logic as main.go)
 	sendEventToGateway(gatewayURL, data)
+
+	// Keep running for ESF monitoring
+	select {}
 }

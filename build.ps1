@@ -128,6 +128,39 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build Sandbox
+Write-Host "Building Sandbox..." -ForegroundColor Cyan
+Set-Location services/sandbox
+go mod tidy
+go build -o ../../bin/sandbox.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build sandbox" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build ML Service
+Write-Host "Building ML Service..." -ForegroundColor Cyan
+Set-Location services/ml
+go mod tidy
+go build -o ../../bin/ml.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build ML service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build MDM Service
+Write-Host "Building MDM Service..." -ForegroundColor Cyan
+Set-Location services/mdm
+go mod tidy
+go build -o ../../bin/mdm.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build MDM service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

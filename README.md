@@ -14,6 +14,14 @@ Next-gen, all-in-one security platform for ransomware-era defense. This monorepo
 - XDR Correlation engine for attack pattern detection
 - Multi-tenant alert correlation and attack chain analysis
 
+## Phase 2 (Advanced Features) ✅
+- eBPF kernel monitoring for Linux (syscalls, file operations)
+- macOS Endpoint Security Framework (ESF) integration
+- Dynamic sandbox for malware analysis and detonation
+- ML pipelines for anomaly detection and risk scoring
+- MDM integration for mobile device management
+- Advanced threat hunting and forensics capabilities
+
 ## Repo Layout
 ```
 repo/
@@ -64,9 +72,12 @@ This will start:
 5. **UEBA**: User behavior analytics → Anomaly detection
 6. **Threat Intel**: Threat indicator matching → TI alerts
 7. **Correlator**: XDR correlation engine → Attack patterns
-8. **Responder**: SOAR playbook executor
-9. **Agent**: Event generator → Gateway
-10. **UI**: React dashboard at http://localhost:3000
+8. **Sandbox**: Dynamic malware analysis → Detonation results
+9. **ML Service**: Machine learning → Risk predictions
+10. **MDM Service**: Mobile device management → Device control
+11. **Responder**: SOAR playbook executor
+12. **Agent**: Multi-platform event generator → Gateway
+13. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -78,16 +89,19 @@ This will start:
 - UI: `cd .\ui && npm run dev`
 
 ### What Happens
-1. Agent generates sample security events
-2. Gateway receives events via HTTP POST `/v1/events`
-3. Gateway publishes events to Kafka topic `musafir.events`
-4. Ingester consumes from Kafka and stores in ClickHouse `musafir_events_raw`
-5. Detector applies Sigma rules and generates alerts to `musafir.alerts`
-6. UEBA analyzes user behavior and generates anomaly alerts to `musafir.ueba_alerts`
-7. Threat Intel matches indicators and generates TI alerts to `musafir.ti_alerts`
-8. Correlator analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
-9. Responder executes SOAR playbooks on correlated alerts
-10. UI dashboard shows real-time events, alerts, and attack patterns
+1. **Multi-platform Agents** generate security events (Windows/Linux/macOS with eBPF/ESF)
+2. **Gateway** receives events via HTTP POST `/v1/events` with mTLS
+3. **Gateway** publishes events to Kafka topic `musafir.events`
+4. **Ingester** consumes from Kafka and stores in ClickHouse `musafir_events_raw`
+5. **Detector** applies Sigma rules and generates alerts to `musafir.alerts`
+6. **UEBA** analyzes user behavior and generates anomaly alerts to `musafir.ueba_alerts`
+7. **Threat Intel** matches indicators and generates TI alerts to `musafir.ti_alerts`
+8. **Sandbox** analyzes suspicious files and generates detonation results to `musafir.sandbox_results`
+9. **ML Service** applies machine learning and generates risk predictions to `musafir.ml_predictions`
+10. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+11. **MDM Service** manages mobile devices and executes security policies
+12. **Responder** executes SOAR playbooks on correlated alerts
+13. **UI Dashboard** shows real-time events, alerts, attack patterns, and ML insights
 
 ## Licensing
 TBD

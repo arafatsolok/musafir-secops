@@ -30,6 +30,10 @@ $env:KAFKA_GROUP_RESPOND = "respond"
 $env:KAFKA_GROUP_UEBA = "ueba"
 $env:KAFKA_GROUP_THREATINTEL = "threatintel"
 $env:KAFKA_GROUP_CORRELATE = "correlate"
+$env:KAFKA_GROUP_ML = "ml"
+$env:KAFKA_GROUP_SANDBOX = "sandbox"
+$env:KAFKA_GROUP_MDM = "mdm"
+$env:SANDBOX_TOPIC = "musafir.sandbox_requests"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
 $env:GATEWAY_URL = "http://localhost:8080"
 
@@ -70,6 +74,21 @@ Write-Host "Starting Correlator..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\correlate.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start Sandbox
+Write-Host "Starting Sandbox..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\sandbox.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start ML Service
+Write-Host "Starting ML Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\ml.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start MDM Service
+Write-Host "Starting MDM Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\mdm.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
@@ -90,5 +109,5 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

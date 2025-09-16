@@ -2,11 +2,17 @@
 
 Next-gen, all-in-one security platform for ransomware-era defense. This monorepo will contain the agent, gateway, core services, UI, content, and infra.
 
-## Phase 0 (MVP)
+## Phase 0 (MVP) ✅
 - Minimal Go agent producing process/file/network telemetry and basic actions (kill/isolate)
 - Ingest gateway with mTLS
 - Kafka/Redpanda + ClickHouse for streaming and search
 - Basic rules and React dashboards
+
+## Phase 1 (XDR Core) ✅
+- UEBA (User & Entity Behavior Analytics) with anomaly detection
+- Threat Intelligence integration with indicator matching
+- XDR Correlation engine for attack pattern detection
+- Multi-tenant alert correlation and attack chain analysis
 
 ## Repo Layout
 ```
@@ -55,9 +61,12 @@ This will start:
 2. **Gateway**: HTTP API + Kafka publisher
 3. **Ingester**: Kafka consumer → ClickHouse writer
 4. **Detector**: Sigma rule engine → Alert generator
-5. **Responder**: SOAR playbook executor
-6. **Agent**: Event generator → Gateway
-7. **UI**: React dashboard at http://localhost:3000
+5. **UEBA**: User behavior analytics → Anomaly detection
+6. **Threat Intel**: Threat indicator matching → TI alerts
+7. **Correlator**: XDR correlation engine → Attack patterns
+8. **Responder**: SOAR playbook executor
+9. **Agent**: Event generator → Gateway
+10. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -74,8 +83,11 @@ This will start:
 3. Gateway publishes events to Kafka topic `musafir.events`
 4. Ingester consumes from Kafka and stores in ClickHouse `musafir_events_raw`
 5. Detector applies Sigma rules and generates alerts to `musafir.alerts`
-6. Responder executes SOAR playbooks on alerts
-7. UI dashboard shows real-time events and alerts
+6. UEBA analyzes user behavior and generates anomaly alerts to `musafir.ueba_alerts`
+7. Threat Intel matches indicators and generates TI alerts to `musafir.ti_alerts`
+8. Correlator analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+9. Responder executes SOAR playbooks on correlated alerts
+10. UI dashboard shows real-time events, alerts, and attack patterns
 
 ## Licensing
 TBD

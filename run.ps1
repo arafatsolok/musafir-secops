@@ -27,6 +27,9 @@ $env:KAFKA_TOPIC = "musafir.events"
 $env:KAFKA_GROUP_INGEST = "ingest"
 $env:KAFKA_GROUP_DETECT = "detect"
 $env:KAFKA_GROUP_RESPOND = "respond"
+$env:KAFKA_GROUP_UEBA = "ueba"
+$env:KAFKA_GROUP_THREATINTEL = "threatintel"
+$env:KAFKA_GROUP_CORRELATE = "correlate"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
 $env:GATEWAY_URL = "http://localhost:8080"
 
@@ -52,9 +55,24 @@ Write-Host "Starting Responder..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\respond.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start UEBA
+Write-Host "Starting UEBA..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\ueba.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Threat Intel
+Write-Host "Starting Threat Intel..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\threatintel.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Correlator
+Write-Host "Starting Correlator..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\correlate.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
-Start-Process -FilePath ".\bin\agent.exe" -WindowStyle Normal
+Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
 
 # Start UI (in development mode)
 Write-Host "Starting UI..." -ForegroundColor Cyan
@@ -72,5 +90,5 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

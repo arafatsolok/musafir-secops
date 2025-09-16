@@ -95,6 +95,39 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build UEBA
+Write-Host "Building UEBA..." -ForegroundColor Cyan
+Set-Location services/ueba
+go mod tidy
+go build -o ../../bin/ueba.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build UEBA" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Threat Intel
+Write-Host "Building Threat Intel..." -ForegroundColor Cyan
+Set-Location services/threatintel
+go mod tidy
+go build -o ../../bin/threatintel.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build threat intel" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Correlator
+Write-Host "Building Correlator..." -ForegroundColor Cyan
+Set-Location services/correlate
+go mod tidy
+go build -o ../../bin/correlate.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build correlator" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

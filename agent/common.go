@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -35,7 +34,7 @@ func sendEventToGateway(gatewayURL string, data []byte) {
 		}
 
 		// Load CA certificate
-		caCert, err := ioutil.ReadFile(caFile)
+		caCert, err := os.ReadFile(caFile)
 		if err != nil {
 			log.Fatalf("failed to load CA certificate: %v", err)
 		}

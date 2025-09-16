@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -98,7 +97,7 @@ func main() {
 		}
 
 		// Load CA certificate for client verification
-		caCert, err := ioutil.ReadFile(caFile)
+		caCert, err := os.ReadFile(caFile)
 		if err != nil {
 			log.Fatalf("failed to load CA certificate: %v", err)
 		}

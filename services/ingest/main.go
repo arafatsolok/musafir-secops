@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"strings"
@@ -29,7 +28,10 @@ func main() {
 	defer conn.Close()
 
 	// Ensure table exists
-	ddl := `CREATE TABLE IF NOT EXISTS musafir_events_raw (\n  ts DateTime DEFAULT now(),\n  raw String\n) ENGINE = MergeTree ORDER BY ts`
+	ddl := `CREATE TABLE IF NOT EXISTS musafir_events_raw (
+  ts DateTime DEFAULT now(),
+  raw String
+) ENGINE = MergeTree ORDER BY ts`
 	if err := conn.Exec(ctx, ddl); err != nil { log.Fatalf("clickhouse ddl: %v", err) }
 
 	reader := kafka.NewReader(kafka.ReaderConfig{

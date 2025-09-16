@@ -238,6 +238,39 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build Compliance Service
+Write-Host "Building Compliance Service..." -ForegroundColor Cyan
+Set-Location services/compliance
+go mod tidy
+go build -o ../../bin/compliance.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Compliance service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build SLSA Service
+Write-Host "Building SLSA Service..." -ForegroundColor Cyan
+Set-Location services/slsa
+go mod tidy
+go build -o ../../bin/slsa.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build SLSA service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Tenant Service
+Write-Host "Building Tenant Service..." -ForegroundColor Cyan
+Set-Location services/tenant
+go mod tidy
+go build -o ../../bin/tenant.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Tenant service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

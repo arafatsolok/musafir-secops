@@ -40,6 +40,9 @@ $env:KAFKA_GROUP_NETWORK = "network"
 $env:KAFKA_GROUP_EMAIL = "email"
 $env:KAFKA_GROUP_IDENTITY = "identity"
 $env:KAFKA_GROUP_VULN = "vuln"
+$env:KAFKA_GROUP_COMPLIANCE = "compliance"
+$env:KAFKA_GROUP_SLSA = "slsa"
+$env:KAFKA_GROUP_TENANT = "tenant"
 $env:SANDBOX_TOPIC = "musafir.sandbox_requests"
 $env:YARA_TOPIC = "musafir.yara_requests"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
@@ -132,6 +135,21 @@ Write-Host "Starting Vulnerability Service..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\vuln.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start Compliance Service
+Write-Host "Starting Compliance Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\compliance.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start SLSA Service
+Write-Host "Starting SLSA Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\slsa.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Tenant Service
+Write-Host "Starting Tenant Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\tenant.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
@@ -152,5 +170,5 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud|network|email|identity|vuln"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud|network|email|identity|vuln|compliance|slsa|tenant"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

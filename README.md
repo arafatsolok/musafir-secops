@@ -33,39 +33,49 @@ repo/
    - Agent: `go build ./agent`
 3. Run gateway, then run agent pointing at the gateway.
 
-## End-to-end (Windows PowerShell)
-- Infra
-  ```
-  cd .\infra
-  docker compose up -d
-  ```
-- Gateway (shell 1)
-  ```
-  cd ..\gateway
-  $env:KAFKA_BROKERS="localhost:9092"
-  $env:KAFKA_TOPIC="musafir.events"
-  go build .
-  .\gateway.exe
-  ```
-- Ingester (shell 2)
-  ```
-  cd .\services\ingest
-  $env:KAFKA_BROKERS="localhost:9092"
-  $env:KAFKA_TOPIC="musafir.events"
-  $env:KAFKA_GROUP="ingest"
-  $env:CLICKHOUSE_DSN="tcp://localhost:9000?database=default"
-  go build .
-  .\ingest.exe
-  ```
-- Agent (shell 3)
-  ```
-  cd .\agent
-  $env:GATEWAY_URL="http://localhost:8080"
-  go build .
-  .\agent.exe
-  ```
+## Quick Start (Windows PowerShell)
 
-Once running, the agent posts a JSON envelope to the gateway, which publishes to Redpanda. The ingester consumes and inserts raw records into ClickHouse table `musafir_events_raw`.
+### Prerequisites
+- Docker Desktop running
+- Go 1.22+ installed
+- Node.js 18+ installed
+
+### Build Everything
+```powershell
+.\build.ps1
+```
+
+### Run Complete Platform
+```powershell
+.\run.ps1
+```
+
+This will start:
+1. **Infrastructure**: Redpanda (Kafka) + ClickHouse
+2. **Gateway**: HTTP API + Kafka publisher
+3. **Ingester**: Kafka consumer → ClickHouse writer
+4. **Detector**: Sigma rule engine → Alert generator
+5. **Responder**: SOAR playbook executor
+6. **Agent**: Event generator → Gateway
+7. **UI**: React dashboard at http://localhost:3000
+
+### Manual Run (if needed)
+- Infra: `cd .\infra && docker compose up -d`
+- Gateway: `cd .\bin && .\gateway.exe`
+- Ingester: `cd .\bin && .\ingest.exe`
+- Detector: `cd .\bin && .\detect.exe`
+- Responder: `cd .\bin && .\respond.exe`
+- Agent: `cd .\bin && .\agent.exe`
+- UI: `cd .\ui && npm run dev`
+
+### What Happens
+1. Agent generates sample security events
+2. Gateway receives events via HTTP POST `/v1/events`
+3. Gateway publishes events to Kafka topic `musafir.events`
+4. Ingester consumes from Kafka and stores in ClickHouse `musafir_events_raw`
+5. Detector applies Sigma rules and generates alerts to `musafir.alerts`
+6. Responder executes SOAR playbooks on alerts
+7. UI dashboard shows real-time events and alerts
 
 ## Licensing
 TBD

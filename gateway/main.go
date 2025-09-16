@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -64,9 +67,59 @@ func main() {
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	addr := ":8080"
-	log.Printf("gateway listening on %s -> kafka[%s] topic[%s]", addr, brokers, topic)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("gateway failed: %v", err)
+	// Events API for dashboard
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		// For now, return empty array - in production this would query ClickHouse
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("[]"))
+	})
+
+	// Setup mTLS server
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	// Load certificates for mTLS
+	certFile := os.Getenv("TLS_CERT_FILE")
+	keyFile := os.Getenv("TLS_KEY_FILE")
+	caFile := os.Getenv("TLS_CA_FILE")
+
+	if certFile != "" && keyFile != "" {
+		// Load server certificate
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			log.Fatalf("failed to load server certificate: %v", err)
+		}
+
+		// Load CA certificate for client verification
+		caCert, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			log.Fatalf("failed to load CA certificate: %v", err)
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+
+		// Configure TLS
+		server.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    caCertPool,
+		}
+
+		log.Printf("gateway listening with mTLS on %s -> kafka[%s] topic[%s]", server.Addr, brokers, topic)
+		if err := server.ListenAndServeTLS("", ""); err != nil {
+			log.Fatalf("gateway failed: %v", err)
+		}
+	} else {
+		log.Printf("gateway listening on %s -> kafka[%s] topic[%s] (no TLS)", server.Addr, brokers, topic)
+		if err := server.ListenAndServe(); err != nil {
+			log.Fatalf("gateway failed: %v", err)
+		}
 	}
 }

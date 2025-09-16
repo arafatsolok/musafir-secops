@@ -31,6 +31,9 @@ Next-gen, all-in-one security platform for ransomware-era defense. This monorepo
 - Vulnerability & Patch Management with SBOM analysis
 - Mobile agents (iOS/Android) for mobile device security
 - SPIFFE/SPIRE identity management for secure service communication
+- Compliance & Governance (ISO 27001, SOC2, GDPR, NIST, PCI DSS)
+- SLSA L3 supply chain security pipelines
+- Multi-tenant data isolation and management
 - Advanced threat hunting and forensics capabilities
 
 ## Repo Layout
@@ -94,9 +97,12 @@ This will start:
 16. **Identity Service**: Identity providers → Identity events
 17. **Vulnerability Service**: Vuln scanning → Vuln events
 18. **SPIRE Service**: Identity management → SPIFFE events
-19. **Responder**: SOAR playbook executor
-20. **Agent**: Multi-platform event generator → Gateway
-21. **UI**: React dashboard at http://localhost:3000
+19. **Compliance Service**: Compliance monitoring → Compliance events
+20. **SLSA Service**: Supply chain security → SLSA events
+21. **Tenant Service**: Multi-tenant management → Tenant events
+22. **Responder**: SOAR playbook executor
+23. **Agent**: Multi-platform event generator → Gateway
+24. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -124,11 +130,14 @@ This will start:
 14. **Identity Service** monitors AD/AAD/Okta and generates identity events to `musafir.identity_events`
 15. **Vulnerability Service** scans for vulnerabilities and generates vuln events to `musafir.vuln_events`
 16. **SPIRE Service** manages SPIFFE identities and generates identity events to `musafir.spire_events`
-17. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
-18. **Cases Service** auto-creates incident cases from high-severity alerts
-19. **MDM Service** manages mobile devices and executes security policies
-20. **Responder** executes SOAR playbooks on correlated alerts
-21. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
+17. **Compliance Service** monitors compliance frameworks and generates compliance events to `musafir.compliance_events`
+18. **SLSA Service** manages supply chain security and generates SLSA events to `musafir.slsa_events`
+19. **Tenant Service** manages multi-tenant isolation and generates tenant events to `musafir.tenant_events`
+20. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+21. **Cases Service** auto-creates incident cases from high-severity alerts
+22. **MDM Service** manages mobile devices and executes security policies
+23. **Responder** executes SOAR playbooks on correlated alerts
+24. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
 
 ## Licensing
 TBD

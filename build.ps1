@@ -194,6 +194,50 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build Network Service
+Write-Host "Building Network Service..." -ForegroundColor Cyan
+Set-Location services/network
+go mod tidy
+go build -o ../../bin/network.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Network service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Email Service
+Write-Host "Building Email Service..." -ForegroundColor Cyan
+Set-Location services/email
+go mod tidy
+go build -o ../../bin/email.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Email service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Identity Service
+Write-Host "Building Identity Service..." -ForegroundColor Cyan
+Set-Location services/identity
+go mod tidy
+go build -o ../../bin/identity.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Identity service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Vulnerability Service
+Write-Host "Building Vulnerability Service..." -ForegroundColor Cyan
+Set-Location services/vuln
+go mod tidy
+go build -o ../../bin/vuln.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Vulnerability service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

@@ -36,6 +36,10 @@ $env:KAFKA_GROUP_MDM = "mdm"
 $env:KAFKA_GROUP_YARA = "yara"
 $env:KAFKA_GROUP_CASES = "cases"
 $env:KAFKA_GROUP_CLOUD = "cloud"
+$env:KAFKA_GROUP_NETWORK = "network"
+$env:KAFKA_GROUP_EMAIL = "email"
+$env:KAFKA_GROUP_IDENTITY = "identity"
+$env:KAFKA_GROUP_VULN = "vuln"
 $env:SANDBOX_TOPIC = "musafir.sandbox_requests"
 $env:YARA_TOPIC = "musafir.yara_requests"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
@@ -108,6 +112,26 @@ Write-Host "Starting Cloud Service..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\cloud.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start Network Service
+Write-Host "Starting Network Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\network.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Email Service
+Write-Host "Starting Email Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\email.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Identity Service
+Write-Host "Starting Identity Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\identity.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Vulnerability Service
+Write-Host "Starting Vulnerability Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\vuln.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
@@ -128,5 +152,5 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud|network|email|identity|vuln"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

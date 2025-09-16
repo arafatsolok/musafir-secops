@@ -25,6 +25,12 @@ Next-gen, all-in-one security platform for ransomware-era defense. This monorepo
 - Case Management system for incident response
 - Ransomware canary files for early detection
 - Cloud connectors (AWS/Azure/GCP) for multi-cloud security
+- Network sensors (SPAN/TAP, eBPF exporters) for network monitoring
+- Email integrations (M365/Google) for email security
+- Identity integrations (AD/AAD/Okta) for user context
+- Vulnerability & Patch Management with SBOM analysis
+- Mobile agents (iOS/Android) for mobile device security
+- SPIFFE/SPIRE identity management for secure service communication
 - Advanced threat hunting and forensics capabilities
 
 ## Repo Layout
@@ -83,9 +89,14 @@ This will start:
 11. **YARA Service**: File scanning → Malware detection
 12. **Cases Service**: Incident management → Case tracking
 13. **Cloud Service**: Multi-cloud monitoring → Cloud events
-14. **Responder**: SOAR playbook executor
-15. **Agent**: Multi-platform event generator → Gateway
-16. **UI**: React dashboard at http://localhost:3000
+14. **Network Service**: Network sensors → Network events
+15. **Email Service**: Email connectors → Email events
+16. **Identity Service**: Identity providers → Identity events
+17. **Vulnerability Service**: Vuln scanning → Vuln events
+18. **SPIRE Service**: Identity management → SPIFFE events
+19. **Responder**: SOAR playbook executor
+20. **Agent**: Multi-platform event generator → Gateway
+21. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -97,7 +108,7 @@ This will start:
 - UI: `cd .\ui && npm run dev`
 
 ### What Happens
-1. **Multi-platform Agents** generate security events (Windows/Linux/macOS with eBPF/ESF)
+1. **Multi-platform Agents** generate security events (Windows/Linux/macOS/iOS/Android with eBPF/ESF)
 2. **Gateway** receives events via HTTP POST `/v1/events` with mTLS
 3. **Gateway** publishes events to Kafka topic `musafir.events`
 4. **Ingester** consumes from Kafka and stores in ClickHouse `musafir_events_raw`
@@ -108,11 +119,16 @@ This will start:
 9. **ML Service** applies machine learning and generates risk predictions to `musafir.ml_predictions`
 10. **YARA Service** scans files and generates malware detection alerts to `musafir.yara_results`
 11. **Cloud Service** monitors AWS/Azure/GCP and generates cloud security events to `musafir.cloud_events`
-12. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
-13. **Cases Service** auto-creates incident cases from high-severity alerts
-14. **MDM Service** manages mobile devices and executes security policies
-15. **Responder** executes SOAR playbooks on correlated alerts
-16. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
+12. **Network Service** monitors network traffic and generates network events to `musafir.network_events`
+13. **Email Service** monitors M365/Gmail and generates email events to `musafir.email_events`
+14. **Identity Service** monitors AD/AAD/Okta and generates identity events to `musafir.identity_events`
+15. **Vulnerability Service** scans for vulnerabilities and generates vuln events to `musafir.vuln_events`
+16. **SPIRE Service** manages SPIFFE identities and generates identity events to `musafir.spire_events`
+17. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+18. **Cases Service** auto-creates incident cases from high-severity alerts
+19. **MDM Service** manages mobile devices and executes security policies
+20. **Responder** executes SOAR playbooks on correlated alerts
+21. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
 
 ## Licensing
 TBD

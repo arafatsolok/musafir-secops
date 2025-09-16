@@ -1,0 +1,8 @@
+on: alert.where(type=="ransomware_suspected" && risk>=80)
+steps:
+  - isolate_host: { mode: "edr", lease_minutes: 60 }
+  - kill_process: { image: "**/wscript.exe" }
+  - snapshot: { provider: "auto" }
+  - collect_artifacts: { memdump: true, logs: last_24h }
+  - notify: { channel: "soc-high", template: "ransomware-ongoing" }
+  - open_case: { severity: critical, sla_minutes: 30 }

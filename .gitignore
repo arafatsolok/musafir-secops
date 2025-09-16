@@ -1,0 +1,38 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+.env
+.env.*
+
+# Node
+node_modules/
+.dist/
+.build/
+.cache/
+yarn.lock
+pnpm-lock.yaml
+
+# Go
+bin/
+build/
+coverage.out
+**/*.test
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib
+**/*.exe~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Docker
+*.pid
+
+# Misc
+*.local

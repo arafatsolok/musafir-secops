@@ -1,0 +1,20 @@
+title: Rapid High-Entropy File Writes
+id: e4a6cfc1-6b0a-4d3a-9f3e-9e5b5a77c9f9
+status: experimental
+logsource:
+  product: endpoint
+  service: file
+level: high
+fields:
+  - asset.id
+  - user.id
+  - event.attrs.process
+  - event.attrs.path
+
+detection:
+  sel:
+    event.name: file_write
+    event.attrs.entropy: ">=7.5"
+  near:
+    event.attrs.path: "*.{docx,xlsx,pptx,pdf,db,psd,raw}"
+  condition: sel | count() by asset.id over 60s >= 200

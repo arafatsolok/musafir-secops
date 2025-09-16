@@ -1,0 +1,33 @@
+version: "3.8"
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.1.5
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1024M
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+    ports:
+      - "9092:9092"   # Kafka API
+      - "9644:9644"   # Admin API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  redpanda_data:
+  clickhouse_data:

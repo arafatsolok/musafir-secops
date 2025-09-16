@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
+	"net/http"
+	"os"
 	"time"
 )
 
@@ -16,7 +19,11 @@ type Envelope struct {
 }
 
 func main() {
-	// Minimal local event generation (stdout) for MVP wiring
+	gatewayURL := os.Getenv("GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://localhost:8080"
+	}
+
 	evt := Envelope{
 		Ts:       time.Now().UTC().Format(time.RFC3339),
 		TenantID: "t-aci",
@@ -37,4 +44,18 @@ func main() {
 
 	data, _ := json.Marshal(evt)
 	log.Printf("agent event: %s", string(data))
+
+	req, err := http.NewRequest(http.MethodPost, gatewayURL+"/v1/events", bytes.NewReader(data))
+	if err != nil {
+		log.Fatalf("build request failed: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("post failed: %v", err)
+	}
+	defer resp.Body.Close()
+	log.Printf("gateway response: %s", resp.Status)
 }

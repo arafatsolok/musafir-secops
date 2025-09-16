@@ -33,5 +33,39 @@ repo/
    - Agent: `go build ./agent`
 3. Run gateway, then run agent pointing at the gateway.
 
+## End-to-end (Windows PowerShell)
+- Infra
+  ```
+  cd .\infra
+  docker compose up -d
+  ```
+- Gateway (shell 1)
+  ```
+  cd ..\gateway
+  $env:KAFKA_BROKERS="localhost:9092"
+  $env:KAFKA_TOPIC="musafir.events"
+  go build .
+  .\gateway.exe
+  ```
+- Ingester (shell 2)
+  ```
+  cd .\services\ingest
+  $env:KAFKA_BROKERS="localhost:9092"
+  $env:KAFKA_TOPIC="musafir.events"
+  $env:KAFKA_GROUP="ingest"
+  $env:CLICKHOUSE_DSN="tcp://localhost:9000?database=default"
+  go build .
+  .\ingest.exe
+  ```
+- Agent (shell 3)
+  ```
+  cd .\agent
+  $env:GATEWAY_URL="http://localhost:8080"
+  go build .
+  .\agent.exe
+  ```
+
+Once running, the agent posts a JSON envelope to the gateway, which publishes to Redpanda. The ingester consumes and inserts raw records into ClickHouse table `musafir_events_raw`.
+
 ## Licensing
 TBD

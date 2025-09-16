@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"time"
@@ -57,6 +58,9 @@ func main() {
 		gatewayURL = "http://localhost:8080"
 	}
 
+	// Start ransomware canary monitoring
+	go StartCanaryMonitoring()
+
 	// Generate Windows-specific event
 	evt := generateWindowsEvent()
 	data, _ := json.Marshal(evt)
@@ -64,4 +68,7 @@ func main() {
 
 	// Send to gateway (same HTTP logic as main.go)
 	sendEventToGateway(gatewayURL, data)
+
+	// Keep running for canary monitoring
+	select {}
 }

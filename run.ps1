@@ -33,7 +33,11 @@ $env:KAFKA_GROUP_CORRELATE = "correlate"
 $env:KAFKA_GROUP_ML = "ml"
 $env:KAFKA_GROUP_SANDBOX = "sandbox"
 $env:KAFKA_GROUP_MDM = "mdm"
+$env:KAFKA_GROUP_YARA = "yara"
+$env:KAFKA_GROUP_CASES = "cases"
+$env:KAFKA_GROUP_CLOUD = "cloud"
 $env:SANDBOX_TOPIC = "musafir.sandbox_requests"
+$env:YARA_TOPIC = "musafir.yara_requests"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
 $env:GATEWAY_URL = "http://localhost:8080"
 
@@ -89,6 +93,21 @@ Write-Host "Starting MDM Service..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\mdm.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start YARA Service
+Write-Host "Starting YARA Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\yara.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Cases Service
+Write-Host "Starting Cases Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\cases.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start Cloud Service
+Write-Host "Starting Cloud Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\cloud.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
@@ -109,5 +128,5 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

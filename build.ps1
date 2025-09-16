@@ -161,6 +161,39 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build YARA Service
+Write-Host "Building YARA Service..." -ForegroundColor Cyan
+Set-Location services/yara
+go mod tidy
+go build -o ../../bin/yara.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build YARA service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Cases Service
+Write-Host "Building Cases Service..." -ForegroundColor Cyan
+Set-Location services/cases
+go mod tidy
+go build -o ../../bin/cases.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Cases service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build Cloud Service
+Write-Host "Building Cloud Service..." -ForegroundColor Cyan
+Set-Location services/cloud
+go mod tidy
+go build -o ../../bin/cloud.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Cloud service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

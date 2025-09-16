@@ -20,6 +20,11 @@ Next-gen, all-in-one security platform for ransomware-era defense. This monorepo
 - Dynamic sandbox for malware analysis and detonation
 - ML pipelines for anomaly detection and risk scoring
 - MDM integration for mobile device management
+- YARA integration for file scanning and malware detection
+- KQL Query Workbench for advanced threat hunting
+- Case Management system for incident response
+- Ransomware canary files for early detection
+- Cloud connectors (AWS/Azure/GCP) for multi-cloud security
 - Advanced threat hunting and forensics capabilities
 
 ## Repo Layout
@@ -75,9 +80,12 @@ This will start:
 8. **Sandbox**: Dynamic malware analysis → Detonation results
 9. **ML Service**: Machine learning → Risk predictions
 10. **MDM Service**: Mobile device management → Device control
-11. **Responder**: SOAR playbook executor
-12. **Agent**: Multi-platform event generator → Gateway
-13. **UI**: React dashboard at http://localhost:3000
+11. **YARA Service**: File scanning → Malware detection
+12. **Cases Service**: Incident management → Case tracking
+13. **Cloud Service**: Multi-cloud monitoring → Cloud events
+14. **Responder**: SOAR playbook executor
+15. **Agent**: Multi-platform event generator → Gateway
+16. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -98,10 +106,13 @@ This will start:
 7. **Threat Intel** matches indicators and generates TI alerts to `musafir.ti_alerts`
 8. **Sandbox** analyzes suspicious files and generates detonation results to `musafir.sandbox_results`
 9. **ML Service** applies machine learning and generates risk predictions to `musafir.ml_predictions`
-10. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
-11. **MDM Service** manages mobile devices and executes security policies
-12. **Responder** executes SOAR playbooks on correlated alerts
-13. **UI Dashboard** shows real-time events, alerts, attack patterns, and ML insights
+10. **YARA Service** scans files and generates malware detection alerts to `musafir.yara_results`
+11. **Cloud Service** monitors AWS/Azure/GCP and generates cloud security events to `musafir.cloud_events`
+12. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+13. **Cases Service** auto-creates incident cases from high-severity alerts
+14. **MDM Service** manages mobile devices and executes security policies
+15. **Responder** executes SOAR playbooks on correlated alerts
+16. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
 
 ## Licensing
 TBD

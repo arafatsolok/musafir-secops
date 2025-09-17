@@ -5,10 +5,11 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"math"
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/musafirsec/musafir/agent/ransomware"
 )
 
 // Windows-specific agent capabilities
@@ -19,7 +20,7 @@ func init() {
 func generateWindowsEvent() Envelope {
 	// Simulate Windows-specific telemetry
 	hostname, _ := os.Hostname()
-	
+
 	return Envelope{
 		Ts:       time.Now().UTC().Format(time.RFC3339),
 		TenantID: "t-aci",
@@ -59,7 +60,7 @@ func main() {
 	}
 
 	// Start ransomware canary monitoring
-	go StartCanaryMonitoring()
+	go ransomware.StartCanaryMonitoring()
 
 	// Generate Windows-specific event
 	evt := generateWindowsEvent()

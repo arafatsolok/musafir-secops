@@ -10,6 +10,16 @@ import (
 	"time"
 )
 
+// Envelope defines the common event schema sent by the agent
+type Envelope struct {
+	Ts       string                 `json:"ts"`
+	TenantID string                 `json:"tenant_id"`
+	Asset    map[string]string      `json:"asset"`
+	User     map[string]string      `json:"user"`
+	Event    map[string]interface{} `json:"event"`
+	Ingest   map[string]string      `json:"ingest"`
+}
+
 // Common functionality shared across all platforms
 func sendEventToGateway(gatewayURL string, data []byte) {
 	req, err := http.NewRequest(http.MethodPost, gatewayURL+"/v1/events", bytes.NewReader(data))

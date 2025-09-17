@@ -1,10 +1,11 @@
-package main
+package ransomware
 
 import (
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,13 +14,13 @@ import (
 
 // CanaryFile represents a honeypot file for ransomware detection
 type CanaryFile struct {
-	Path        string    `json:"path"`
-	Hash        string    `json:"hash"`
-	Size        int64     `json:"size"`
-	CreatedAt   time.Time `json:"created_at"`
+	Path         string    `json:"path"`
+	Hash         string    `json:"hash"`
+	Size         int64     `json:"size"`
+	CreatedAt    time.Time `json:"created_at"`
 	LastModified time.Time `json:"last_modified"`
-	Content     []byte    `json:"content"`
-	IsActive    bool      `json:"is_active"`
+	Content      []byte    `json:"content"`
+	IsActive     bool      `json:"is_active"`
 }
 
 // CanaryManager handles ransomware canary files
@@ -113,7 +114,7 @@ func (cm *CanaryManager) deployCanaryFiles() error {
 func (cm *CanaryManager) createCanaryFile(filePath, ext string) (*CanaryFile, error) {
 	// Generate realistic content based on file extension
 	content := cm.generateRealisticContent(ext)
-	
+
 	// Add canary markers
 	content = cm.addCanaryMarkers(content, filePath)
 
@@ -258,26 +259,22 @@ func (cm *CanaryManager) addCanaryMarkers(content []byte, filePath string) []byt
 	}
 
 	// Append markers as comments or in metadata
-	markerText := "\n<!-- " + strings.Join(markers, " ") + " -->\n"
+	markerText := "\n<!-- " + filePath + " " + strings.Join(markers, " ") + " -->\n"
 	return append(content, []byte(markerText)...)
 }
 
 func (cm *CanaryManager) calculateHash(content []byte) string {
-	// Simple hash calculation (in production, use SHA-256)
-	hash := make([]byte, 16)
-	rand.Read(hash)
-	return hex.EncodeToString(hash)
+	// Calculate SHA-256 hash of content
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func (cm *CanaryManager) monitorCanaryFiles() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			cm.checkCanaryFiles()
-		}
+	for range ticker.C {
+		cm.checkCanaryFiles()
 	}
 }
 
@@ -352,10 +349,10 @@ func (cm *CanaryManager) calculateEntropy(data []byte) float64 {
 
 func (cm *CanaryManager) handleCanaryCompromise(canary CanaryFile, reason string) {
 	log.Printf("CANARY COMPROMISED: %s - %s", canary.Path, reason)
-	
+
 	// Send alert
 	cm.monitorChan <- canary
-	
+
 	// In production, this would:
 	// 1. Send alert to correlation engine
 	// 2. Trigger incident response

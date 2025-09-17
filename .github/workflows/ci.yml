@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-go-services:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+      - name: Tidy and build services
+        run: |
+          set -e
+          for dir in services/* gateway; do
+            if [ -f "$dir/go.mod" ]; then
+              echo "Building $dir"
+              (cd "$dir" && go mod tidy && go build ./...)
+            fi
+          done
+
+  build-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package.json
+      - name: Install deps and build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build

@@ -15,86 +15,135 @@ import (
 type EmailEvent struct {
 	ID          string                 `json:"id"`
 	Timestamp   time.Time              `json:"timestamp"`
-	Provider    string                 `json:"provider"` // m365, gmail
 	MessageID   string                 `json:"message_id"`
-	Subject     string                 `json:"subject"`
 	From        string                 `json:"from"`
 	To          []string               `json:"to"`
 	CC          []string               `json:"cc"`
 	BCC         []string               `json:"bcc"`
+	Subject     string                 `json:"subject"`
 	Body        string                 `json:"body"`
-	BodyType    string                 `json:"body_type"` // html, text
+	HTMLBody    string                 `json:"html_body"`
 	Attachments []EmailAttachment      `json:"attachments"`
 	Headers     map[string]string      `json:"headers"`
 	Size        int64                  `json:"size"`
-	Priority    string                 `json:"priority"`
-	ReadStatus  string                 `json:"read_status"`
-	Folder      string                 `json:"folder"`
-	ThreadID    string                 `json:"thread_id"`
-	ConversationID string              `json:"conversation_id"`
+	Direction   string                 `json:"direction"` // inbound, outbound
+	Source      string                 `json:"source"`    // m365, gmail, exchange
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 type EmailAttachment struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Size     int64  `json:"size"`
-	MimeType string `json:"mime_type"`
-	Hash     string `json:"hash"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Size        int64                  `json:"size"`
+	ContentType string                 `json:"content_type"`
+	Hash        string                 `json:"hash"`
+	IsMalicious bool                   `json:"is_malicious"`
+	ScanResult  map[string]interface{} `json:"scan_result"`
 }
 
-type EmailRule struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Conditions  []string `json:"conditions"`
-	Actions     []string `json:"actions"`
-	Enabled     bool     `json:"enabled"`
-	Priority    int      `json:"priority"`
+type EmailAlert struct {
+	ID          string                 `json:"id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	AlertType   string                 `json:"alert_type"`
+	Severity    string                 `json:"severity"`
+	MessageID   string                 `json:"message_id"`
+	From        string                 `json:"from"`
+	To          []string               `json:"to"`
+	Subject     string                 `json:"subject"`
+	Description string                 `json:"description"`
+	IOCs        []string               `json:"iocs"`
+	TTPs        []string               `json:"ttps"`
+	Confidence  float64                `json:"confidence"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-type EmailConnector struct {
-	Provider string
-	Config   map[string]string
-	Enabled  bool
+type EmailThreat struct {
+	ID          string                 `json:"id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	ThreatType  string                 `json:"threat_type"`
+	Severity    string                 `json:"severity"`
+	MessageID   string                 `json:"message_id"`
+	From        string                 `json:"from"`
+	To          []string               `json:"to"`
+	Subject     string                 `json:"subject"`
+	Description string                 `json:"description"`
+	IOCs        []string               `json:"iocs"`
+	TTPs        []string               `json:"ttps"`
+	Confidence  float64                `json:"confidence"`
+	Action      string                 `json:"action"` // quarantine, delete, allow
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type EmailConfig struct {
+	Source   string                 `json:"source"`
+	Enabled  bool                   `json:"enabled"`
+	Config   map[string]interface{} `json:"config"`
+	LastSync time.Time              `json:"last_sync"`
+	Status   string                 `json:"status"`
 }
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "email" }
+	if group == "" {
+		group = "email"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure email tables exist
 	createEmailTables(conn, ctx)
 
-	// Initialize email connectors
-	connectors := initializeEmailConnectors()
+	// Event reader
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  strings.Split(kbrokers, ","),
+		Topic:    "musafir.events",
+		GroupID:  group,
+		MinBytes: 1, MaxBytes: 10e6,
+	})
+	defer reader.Close()
 
+	// Alert writer
 	writer := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: strings.Split(kbrokers, ","),
-		Topic:   "musafir.email_events",
+		Topic:   "musafir.email_alerts",
 	})
 
-	log.Printf("email connectors starting brokers=%s", kbrokers)
+	// Initialize email configurations
+	configs := initializeEmailConfigs()
 
-	// Start each email connector
-	for _, connector := range connectors {
-		if connector.Enabled {
-			go startEmailConnector(connector, writer, ctx)
+	log.Printf("Email service consuming events brokers=%s", kbrokers)
+	for {
+		m, err := reader.ReadMessage(ctx)
+		if err != nil {
+			log.Fatalf("kafka read: %v", err)
 		}
-	}
 
-	// Keep running
-	select {}
+		var event map[string]interface{}
+		if err := json.Unmarshal(m.Value, &event); err != nil {
+			log.Printf("unmarshal event: %v", err)
+			continue
+		}
+
+		// Process email event
+		processEmailEvent(event, writer, ctx)
+
+		// Monitor email sources
+		go monitorEmailSources(configs, writer, ctx)
+	}
 }
 
 func createEmailTables(conn ch.Conn, ctx context.Context) {
@@ -102,281 +151,443 @@ func createEmailTables(conn ch.Conn, ctx context.Context) {
 	ddl := `CREATE TABLE IF NOT EXISTS musafir_email_events (
   id String,
   timestamp DateTime,
-  provider String,
   message_id String,
+  from_address String,
+  to_addresses Array(String),
+  cc_addresses Array(String),
+  bcc_addresses Array(String),
   subject String,
-  from_addr String,
-  to_addrs Array(String),
-  cc_addrs Array(String),
-  bcc_addrs Array(String),
   body String,
-  body_type String,
+  html_body String,
   attachments String,
   headers String,
   size Int64,
-  priority String,
-  read_status String,
-  folder String,
-  thread_id String,
-  conversation_id String,
+  direction String,
+  source String,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 
-	// Email rules table
-	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_email_rules (
+	// Email alerts table
+	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_email_alerts (
   id String,
-  name String,
+  timestamp DateTime,
+  alert_type String,
+  severity String,
+  message_id String,
+  from_address String,
+  to_addresses Array(String),
+  subject String,
   description String,
-  conditions String,
-  actions String,
-  enabled UInt8,
-  priority Int32,
-  created_at DateTime,
-  updated_at DateTime
-) ENGINE = MergeTree ORDER BY created_at`
-	
+  iocs Array(String),
+  ttps Array(String),
+  confidence Float64,
+  metadata String
+) ENGINE = MergeTree ORDER BY timestamp`
+
 	if err := conn.Exec(ctx, ddl2); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Email threats table
+	ddl3 := `CREATE TABLE IF NOT EXISTS musafir_email_threats (
+  id String,
+  timestamp DateTime,
+  threat_type String,
+  severity String,
+  message_id String,
+  from_address String,
+  to_addresses Array(String),
+  subject String,
+  description String,
+  iocs Array(String),
+  ttps Array(String),
+  confidence Float64,
+  action String,
+  metadata String
+) ENGINE = MergeTree ORDER BY timestamp`
+
+	if err := conn.Exec(ctx, ddl3); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Email configurations table
+	ddl4 := `CREATE TABLE IF NOT EXISTS musafir_email_configs (
+  source String,
+  enabled UInt8,
+  config String,
+  last_sync DateTime,
+  status String
+) ENGINE = MergeTree ORDER BY source`
+
+	if err := conn.Exec(ctx, ddl4); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 }
 
-func initializeEmailConnectors() []EmailConnector {
-	connectors := []EmailConnector{}
+func processEmailEvent(event map[string]interface{}, writer *kafka.Writer, ctx context.Context) {
+	// Extract email data from event
+	emailEvent := extractEmailData(event)
 
-	// Microsoft 365 Connector
-	if os.Getenv("M365_CLIENT_ID") != "" {
-		connectors = append(connectors, EmailConnector{
-			Provider: "m365",
-			Config: map[string]string{
-				"client_id":     os.Getenv("M365_CLIENT_ID"),
-				"client_secret": os.Getenv("M365_CLIENT_SECRET"),
-				"tenant_id":     os.Getenv("M365_TENANT_ID"),
-				"scope":         "https://graph.microsoft.com/.default",
-			},
-			Enabled: true,
-		})
-	}
+	// Store email event
+	storeEmailEvent(emailEvent)
 
-	// Gmail Connector
-	if os.Getenv("GMAIL_CLIENT_ID") != "" {
-		connectors = append(connectors, EmailConnector{
-			Provider: "gmail",
-			Config: map[string]string{
-				"client_id":     os.Getenv("GMAIL_CLIENT_ID"),
-				"client_secret": os.Getenv("GMAIL_CLIENT_SECRET"),
-				"refresh_token": os.Getenv("GMAIL_REFRESH_TOKEN"),
-				"scope":         "https://www.googleapis.com/auth/gmail.readonly",
-			},
-			Enabled: true,
-		})
-	}
+	// Analyze for email threats
+	threats := analyzeEmailThreats(emailEvent)
 
-	return connectors
-}
+	// Send threats as alerts
+	for _, threat := range threats {
+		alert := EmailAlert{
+			ID:          generateEmailAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   threat.ThreatType,
+			Severity:    threat.Severity,
+			MessageID:   threat.MessageID,
+			From:        threat.From,
+			To:          threat.To,
+			Subject:     threat.Subject,
+			Description: threat.Description,
+			IOCs:        threat.IOCs,
+			TTPs:        threat.TTPs,
+			Confidence:  threat.Confidence,
+			Metadata:    threat.Metadata,
+		}
 
-func startEmailConnector(connector EmailConnector, writer *kafka.Writer, ctx context.Context) {
-	log.Printf("Starting %s email connector", connector.Provider)
-
-	switch connector.Provider {
-	case "m365":
-		startM365Connector(connector, writer, ctx)
-	case "gmail":
-		startGmailConnector(connector, writer, ctx)
+		alertData, _ := json.Marshal(alert)
+		if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+			log.Printf("write email alert: %v", err)
+		} else {
+			log.Printf("EMAIL ALERT: %s - %s (%s)", alert.AlertType, alert.From, alert.Severity)
+		}
 	}
 }
 
-func startM365Connector(connector EmailConnector, writer *kafka.Writer, ctx context.Context) {
-	// Simulate Microsoft 365 email events
-	ticker := time.NewTicker(30 * time.Second)
+func extractEmailData(event map[string]interface{}) EmailEvent {
+	emailEvent := EmailEvent{
+		ID:        generateEmailEventID(),
+		Timestamp: time.Now(),
+		Metadata:  make(map[string]interface{}),
+	}
+
+	// Extract email data from event
+	if eventData, ok := event["event"].(map[string]interface{}); ok {
+		if attrs, ok := eventData["attrs"].(map[string]interface{}); ok {
+			emailEvent.MessageID = getString(attrs, "message_id")
+			emailEvent.From = getString(attrs, "from")
+			emailEvent.To = getStringArray(attrs, "to")
+			emailEvent.CC = getStringArray(attrs, "cc")
+			emailEvent.BCC = getStringArray(attrs, "bcc")
+			emailEvent.Subject = getString(attrs, "subject")
+			emailEvent.Body = getString(attrs, "body")
+			emailEvent.HTMLBody = getString(attrs, "html_body")
+			emailEvent.Size = getInt64(attrs, "size")
+			emailEvent.Direction = getString(attrs, "direction")
+			emailEvent.Source = getString(attrs, "source")
+		}
+	}
+
+	return emailEvent
+}
+
+func analyzeEmailThreats(event EmailEvent) []EmailThreat {
+	var threats []EmailThreat
+
+	// Check for phishing
+	if isPhishingEmail(event) {
+		threat := EmailThreat{
+			ID:          generateEmailThreatID(),
+			Timestamp:   time.Now(),
+			ThreatType:  "phishing",
+			Severity:    "high",
+			MessageID:   event.MessageID,
+			From:        event.From,
+			To:          event.To,
+			Subject:     event.Subject,
+			Description: "Phishing email detected",
+			IOCs:        []string{event.From, event.Subject},
+			TTPs:        []string{"T1566", "T1598"},
+			Confidence:  0.85,
+			Action:      "quarantine",
+			Metadata: map[string]interface{}{
+				"phishing_indicators": []string{"urgent", "verify", "account"},
+				"sender_reputation":   "suspicious",
+			},
+		}
+		threats = append(threats, threat)
+	}
+
+	// Check for malware attachments
+	if hasMaliciousAttachments(event) {
+		threat := EmailThreat{
+			ID:          generateEmailThreatID(),
+			Timestamp:   time.Now(),
+			ThreatType:  "malware",
+			Severity:    "critical",
+			MessageID:   event.MessageID,
+			From:        event.From,
+			To:          event.To,
+			Subject:     event.Subject,
+			Description: "Malicious attachment detected",
+			IOCs:        []string{event.From, event.Subject},
+			TTPs:        []string{"T1566.001", "T1204.002"},
+			Confidence:  0.95,
+			Action:      "quarantine",
+			Metadata: map[string]interface{}{
+				"malware_type": "trojan",
+				"file_hash":    "sha256:abcd1234...",
+			},
+		}
+		threats = append(threats, threat)
+	}
+
+	// Check for business email compromise
+	if isBusinessEmailCompromise(event) {
+		threat := EmailThreat{
+			ID:          generateEmailThreatID(),
+			Timestamp:   time.Now(),
+			ThreatType:  "bec",
+			Severity:    "high",
+			MessageID:   event.MessageID,
+			From:        event.From,
+			To:          event.To,
+			Subject:     event.Subject,
+			Description: "Business email compromise detected",
+			IOCs:        []string{event.From, event.Subject},
+			TTPs:        []string{"T1566.002", "T1598.002"},
+			Confidence:  0.8,
+			Action:      "quarantine",
+			Metadata: map[string]interface{}{
+				"bec_indicators":  []string{"urgent", "wire transfer", "confidential"},
+				"sender_spoofing": true,
+			},
+		}
+		threats = append(threats, threat)
+	}
+
+	// Check for data exfiltration
+	if isDataExfiltration(event) {
+		threat := EmailThreat{
+			ID:          generateEmailThreatID(),
+			Timestamp:   time.Now(),
+			ThreatType:  "data_exfiltration",
+			Severity:    "high",
+			MessageID:   event.MessageID,
+			From:        event.From,
+			To:          event.To,
+			Subject:     event.Subject,
+			Description: "Potential data exfiltration detected",
+			IOCs:        []string{event.From, event.Subject},
+			TTPs:        []string{"T1041", "T1048"},
+			Confidence:  0.75,
+			Action:      "quarantine",
+			Metadata: map[string]interface{}{
+				"exfiltration_indicators": []string{"large_attachment", "external_recipient"},
+				"data_sensitivity":        "high",
+			},
+		}
+		threats = append(threats, threat)
+	}
+
+	return threats
+}
+
+func isPhishingEmail(event EmailEvent) bool {
+	// Check for phishing indicators in subject and body
+	phishingKeywords := []string{
+		"urgent", "verify", "account", "suspended", "expired",
+		"click here", "verify now", "act now", "limited time",
+	}
+
+	subject := strings.ToLower(event.Subject)
+	body := strings.ToLower(event.Body)
+
+	for _, keyword := range phishingKeywords {
+		if strings.Contains(subject, keyword) || strings.Contains(body, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasMaliciousAttachments(event EmailEvent) bool {
+	// Check for malicious file types
+	maliciousExtensions := []string{
+		".exe", ".bat", ".cmd", ".scr", ".pif", ".com",
+		".js", ".vbs", ".jar", ".zip", ".rar", ".7z",
+	}
+
+	for _, attachment := range event.Attachments {
+		for _, ext := range maliciousExtensions {
+			if strings.HasSuffix(strings.ToLower(attachment.Name), ext) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func isBusinessEmailCompromise(event EmailEvent) bool {
+	// Check for BEC indicators
+	becKeywords := []string{
+		"wire transfer", "urgent payment", "confidential",
+		"CEO", "CFO", "executive", "board meeting",
+	}
+
+	subject := strings.ToLower(event.Subject)
+	body := strings.ToLower(event.Body)
+
+	for _, keyword := range becKeywords {
+		if strings.Contains(subject, keyword) || strings.Contains(body, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isDataExfiltration(event EmailEvent) bool {
+	// Check for data exfiltration indicators
+	return event.Size > 10*1024*1024 && // Large email
+		len(event.Attachments) > 0 && // Has attachments
+		isExternalRecipient(event.To) // Sent to external recipients
+}
+
+func isExternalRecipient(recipients []string) bool {
+	// Check if any recipient is external
+	for _, recipient := range recipients {
+		if !strings.Contains(recipient, "@company.com") {
+			return true
+		}
+	}
+	return false
+}
+
+func initializeEmailConfigs() []EmailConfig {
+	return []EmailConfig{
+		{
+			Source:   "m365",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"tenant_id":     "tenant-123",
+				"client_id":     "client-456",
+				"client_secret": "secret-789",
+				"endpoint":      "https://graph.microsoft.com",
+			},
+		},
+		{
+			Source:   "gmail",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"credentials_file": "/path/to/credentials.json",
+				"scopes":           []string{"https://www.googleapis.com/auth/gmail.readonly"},
+			},
+		},
+		{
+			Source:   "exchange",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"server":   "mail.company.com",
+				"username": "security@company.com",
+				"password": "password123",
+			},
+		},
+	}
+}
+
+func monitorEmailSources(configs []EmailConfig, writer *kafka.Writer, ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			// Generate sample M365 events
-			events := generateM365Events()
-			for _, event := range events {
-				sendEmailEvent(event, writer, ctx)
+			for _, config := range configs {
+				if config.Enabled {
+					// Simulate email source monitoring
+					if time.Since(config.LastSync) > 10*time.Minute {
+						// Source is not syncing
+						alert := EmailAlert{
+							ID:          generateEmailAlertID(),
+							Timestamp:   time.Now(),
+							AlertType:   "source_sync_failed",
+							Severity:    "medium",
+							MessageID:   "",
+							From:        "",
+							To:          []string{},
+							Subject:     "",
+							Description: "Email source sync failed",
+							IOCs:        []string{config.Source},
+							TTPs:        []string{},
+							Confidence:  1.0,
+							Metadata: map[string]interface{}{
+								"source":    config.Source,
+								"last_sync": config.LastSync,
+							},
+						}
+
+						alertData, _ := json.Marshal(alert)
+						if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+							log.Printf("write source alert: %v", err)
+						}
+					}
+				}
 			}
-		case <-ctx.Done():
-			return
 		}
 	}
 }
 
-func startGmailConnector(connector EmailConnector, writer *kafka.Writer, ctx context.Context) {
-	// Simulate Gmail events
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Generate sample Gmail events
-			events := generateGmailEvents()
-			for _, event := range events {
-				sendEmailEvent(event, writer, ctx)
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+func storeEmailEvent(event EmailEvent) {
+	// Store email event in ClickHouse
+	// Implementation would store the event in the database
 }
 
-func generateM365Events() []EmailEvent {
-	events := []EmailEvent{
-		{
-			ID:        generateEmailEventID(),
-			Timestamp: time.Now(),
-			Provider:  "m365",
-			MessageID: "m365-" + time.Now().Format("20060102150405"),
-			Subject:   "Important Security Update Required",
-			From:      "security@company.com",
-			To:        []string{"admin@company.com", "it@company.com"},
-			CC:        []string{},
-			BCC:       []string{},
-			Body:      "Please update your security software immediately.",
-			BodyType:  "text",
-			Attachments: []EmailAttachment{
-				{
-					ID:       "att1",
-					Name:     "security_patch.exe",
-					Size:     1024000,
-					MimeType: "application/octet-stream",
-					Hash:     "sha256:abc123...",
-				},
-			},
-			Headers: map[string]string{
-				"X-Microsoft-Exchange-Organization": "true",
-				"X-MS-Exchange-Organization":        "true",
-			},
-			Size:           2048000,
-			Priority:       "high",
-			ReadStatus:     "unread",
-			Folder:         "Inbox",
-			ThreadID:       "thread-123",
-			ConversationID: "conv-456",
-			Metadata: map[string]interface{}{
-				"tenant_id": "tenant-123",
-				"user_id":   "user-456",
-			},
-		},
-		{
-			ID:        generateEmailEventID(),
-			Timestamp: time.Now(),
-			Provider:  "m365",
-			MessageID: "m365-" + time.Now().Format("20060102150406"),
-			Subject:   "Suspicious Email Detected",
-			From:      "noreply@suspicious-domain.com",
-			To:        []string{"user@company.com"},
-			CC:        []string{},
-			BCC:       []string{},
-			Body:      "Click here to verify your account: http://fake-bank.com/verify",
-			BodyType:  "html",
-			Attachments: []EmailAttachment{},
-			Headers: map[string]string{
-				"X-Spam-Score": "8.5",
-				"X-Spam-Flag":  "YES",
-			},
-			Size:           512000,
-			Priority:       "normal",
-			ReadStatus:     "unread",
-			Folder:         "Inbox",
-			ThreadID:       "thread-124",
-			ConversationID: "conv-457",
-			Metadata: map[string]interface{}{
-				"tenant_id": "tenant-123",
-				"user_id":   "user-789",
-				"spam_score": 8.5,
-			},
-		},
-	}
-
-	return events
-}
-
-func generateGmailEvents() []EmailEvent {
-	events := []EmailEvent{
-		{
-			ID:        generateEmailEventID(),
-			Timestamp: time.Now(),
-			Provider:  "gmail",
-			MessageID: "gmail-" + time.Now().Format("20060102150405"),
-			Subject:   "Meeting Reminder",
-			From:      "calendar@company.com",
-			To:        []string{"team@company.com"},
-			CC:        []string{},
-			BCC:       []string{},
-			Body:      "Don't forget about our team meeting at 2 PM today.",
-			BodyType:  "text",
-			Attachments: []EmailAttachment{},
-			Headers: map[string]string{
-				"X-Gmail-Labels": "Important,Meeting",
-			},
-			Size:           1024,
-			Priority:       "normal",
-			ReadStatus:     "read",
-			Folder:         "Inbox",
-			ThreadID:       "thread-gmail-123",
-			ConversationID: "conv-gmail-456",
-			Metadata: map[string]interface{}{
-				"labels": []string{"Important", "Meeting"},
-			},
-		},
-		{
-			ID:        generateEmailEventID(),
-			Timestamp: time.Now(),
-			Provider:  "gmail",
-			MessageID: "gmail-" + time.Now().Format("20060102150406"),
-			Subject:   "URGENT: Account Verification Required",
-			From:      "noreply@phishing-site.com",
-			To:        []string{"victim@company.com"},
-			CC:        []string{},
-			BCC:       []string{},
-			Body:      "Your account will be suspended unless you verify immediately: http://fake-verification.com",
-			BodyType:  "html",
-			Attachments: []EmailAttachment{
-				{
-					ID:       "att2",
-					Name:     "verification_form.pdf",
-					Size:     512000,
-					MimeType: "application/pdf",
-					Hash:     "sha256:def456...",
-				},
-			},
-			Headers: map[string]string{
-				"X-Gmail-Labels": "Spam",
-			},
-			Size:           1024000,
-			Priority:       "high",
-			ReadStatus:     "unread",
-			Folder:         "Spam",
-			ThreadID:       "thread-gmail-124",
-			ConversationID: "conv-gmail-457",
-			Metadata: map[string]interface{}{
-				"labels":    []string{"Spam"},
-				"phishing":  true,
-				"risk_score": 9.2,
-			},
-		},
-	}
-
-	return events
-}
-
-func sendEmailEvent(event EmailEvent, writer *kafka.Writer, ctx context.Context) {
-	eventData, _ := json.Marshal(event)
-	if err := writer.WriteMessages(ctx, kafka.Message{Value: eventData}); err != nil {
-		log.Printf("write email event: %v", err)
-	} else {
-		log.Printf("EMAIL EVENT: %s - %s (%s)", event.Provider, event.Subject, event.From)
-	}
-}
-
+// Helper functions
 func generateEmailEventID() string {
 	return "email-" + time.Now().Format("20060102150405")
+}
+
+func generateEmailAlertID() string {
+	return "email-alert-" + time.Now().Format("20060102150405")
+}
+
+func generateEmailThreatID() string {
+	return "email-threat-" + time.Now().Format("20060102150405")
+}
+
+func getString(data map[string]interface{}, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getStringArray(data map[string]interface{}, key string) []string {
+	if val, ok := data[key].([]interface{}); ok {
+		result := make([]string, len(val))
+		for i, v := range val {
+			if str, ok := v.(string); ok {
+				result[i] = str
+			}
+		}
+		return result
+	}
+	return []string{}
+}
+
+func getInt64(data map[string]interface{}, key string) int64 {
+	if val, ok := data[key].(float64); ok {
+		return int64(val)
+	}
+	return 0
 }

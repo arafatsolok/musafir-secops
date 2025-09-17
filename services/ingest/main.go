@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -13,18 +14,28 @@ import (
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	topic := os.Getenv("KAFKA_TOPIC")
-	if topic == "" { topic = "musafir.events" }
+	if topic == "" {
+		topic = "musafir.events"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "ingest" }
+	if group == "" {
+		group = "ingest"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure table exists
@@ -32,7 +43,12 @@ func main() {
   ts DateTime DEFAULT now(),
   raw String
 ) ENGINE = MergeTree ORDER BY ts`
-	if err := conn.Exec(ctx, ddl); err != nil { log.Fatalf("clickhouse ddl: %v", err) }
+	if err := conn.Exec(ctx, ddl); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Start HTTP server
+	go startHTTPServer()
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  strings.Split(kbrokers, ","),
@@ -45,11 +61,36 @@ func main() {
 	log.Printf("ingest consuming topic=%s brokers=%s", topic, kbrokers)
 	for {
 		m, err := reader.ReadMessage(ctx)
-		if err != nil { log.Fatalf("kafka read: %v", err) }
+		if err != nil {
+			log.Fatalf("kafka read: %v", err)
+		}
 
 		batch, err := conn.PrepareBatch(ctx, "INSERT INTO musafir_events_raw (raw)")
-		if err != nil { log.Fatalf("clickhouse batch: %v", err) }
-		if err := batch.Append(string(m.Value)); err != nil { log.Fatalf("append: %v", err) }
-		if err := batch.Send(); err != nil { log.Fatalf("send: %v", err) }
+		if err != nil {
+			log.Fatalf("clickhouse batch: %v", err)
+		}
+		if err := batch.Append(string(m.Value)); err != nil {
+			log.Fatalf("append: %v", err)
+		}
+		if err := batch.Send(); err != nil {
+			log.Fatalf("send: %v", err)
+		}
 	}
+}
+
+func startHTTPServer() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"healthy","service":"ingest","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
+	})
+
+	log.Println("Starting HTTP server on :8081")
+	log.Fatal(http.ListenAndServe(":8081", mux))
 }

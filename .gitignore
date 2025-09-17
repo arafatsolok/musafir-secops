@@ -1,38 +1,40 @@
-# General
+# OS / Editor
 .DS_Store
 Thumbs.db
-*.log
-*.tmp
 *.swp
-.env
-.env.*
+*.swo
+.vscode/
+.idea/
 
-# Node
-node_modules/
-.dist/
-.build/
-.cache/
-yarn.lock
-pnpm-lock.yaml
+# Node / UI
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/.cache/
+ui/npm-debug.log*
+ui/yarn-error.log*
 
 # Go
-bin/
-build/
-coverage.out
-**/*.test
 **/*.exe
 **/*.dll
 **/*.so
-**/*.dylib
-**/*.exe~
+**/*.test
+**/vendor/
+coverage.out
 
-# IDE
-.vscode/
-.idea/
-*.iml
+# Logs
+logs/
+*.log
 
-# Docker
-*.pid
+# Docker / env
+**/.env
+infra/ssl/
+
+# Build outputs
+**/bin/
+**/build/
+**/out/
 
 # Misc
-*.local
+*.tmp
+*.bak

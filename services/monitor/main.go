@@ -2,43 +2,41 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"os"
-	"strings"
 	"time"
 
+	"net/http"
+
 	ch "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/segmentio/kafka-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
 )
 
 type PlatformMetrics struct {
-	Timestamp        time.Time `json:"timestamp"`
-	ServiceName      string    `json:"service_name"`
-	Status           string    `json:"status"` // healthy, degraded, unhealthy
-	CPUUsage         float64   `json:"cpu_usage"`
-	MemoryUsage      float64   `json:"memory_usage"`
-	EventsProcessed  int64     `json:"events_processed"`
-	AlertsGenerated  int64     `json:"alerts_generated"`
-	ResponseTime     float64   `json:"response_time_ms"`
-	ErrorRate        float64   `json:"error_rate"`
-	Throughput       float64   `json:"throughput_eps"`
-	QueueDepth       int64     `json:"queue_depth"`
-	LastHeartbeat    time.Time `json:"last_heartbeat"`
-	Metadata         map[string]interface{} `json:"metadata"`
+	Timestamp       time.Time              `json:"timestamp"`
+	ServiceName     string                 `json:"service_name"`
+	Status          string                 `json:"status"` // healthy, degraded, unhealthy
+	CPUUsage        float64                `json:"cpu_usage"`
+	MemoryUsage     float64                `json:"memory_usage"`
+	EventsProcessed int64                  `json:"events_processed"`
+	AlertsGenerated int64                  `json:"alerts_generated"`
+	ResponseTime    float64                `json:"response_time_ms"`
+	ErrorRate       float64                `json:"error_rate"`
+	Throughput      float64                `json:"throughput_eps"`
+	QueueDepth      int64                  `json:"queue_depth"`
+	LastHeartbeat   time.Time              `json:"last_heartbeat"`
+	Metadata        map[string]interface{} `json:"metadata"`
 }
 
 type ServiceHealth struct {
-	ServiceName   string    `json:"service_name"`
-	Status        string    `json:"status"`
-	LastCheck     time.Time `json:"last_check"`
-	ResponseTime  float64   `json:"response_time_ms"`
-	ErrorCount    int64     `json:"error_count"`
-	SuccessCount  int64     `json:"success_count"`
-	Uptime        float64   `json:"uptime_seconds"`
+	ServiceName  string    `json:"service_name"`
+	Status       string    `json:"status"`
+	LastCheck    time.Time `json:"last_check"`
+	ResponseTime float64   `json:"response_time_ms"`
+	ErrorCount   int64     `json:"error_count"`
+	SuccessCount int64     `json:"success_count"`
+	Uptime       float64   `json:"uptime_seconds"`
 }
 
 var (
@@ -49,7 +47,7 @@ var (
 		},
 		[]string{"service", "type"},
 	)
-	
+
 	alertsGenerated = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "musafir_alerts_generated_total",
@@ -57,7 +55,7 @@ var (
 		},
 		[]string{"service", "severity"},
 	)
-	
+
 	responseTime = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name: "musafir_response_time_seconds",
@@ -65,7 +63,7 @@ var (
 		},
 		[]string{"service", "endpoint"},
 	)
-	
+
 	serviceHealth = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "musafir_service_health",
@@ -84,16 +82,24 @@ func init() {
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "monitor" }
+	if group == "" {
+		group = "monitor"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure monitoring tables exist
@@ -126,7 +132,7 @@ func createMonitoringTables(conn ch.Conn, ctx context.Context) {
   last_heartbeat DateTime,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -141,7 +147,7 @@ func createMonitoringTables(conn ch.Conn, ctx context.Context) {
   success_count Int64,
   uptime Float64
 ) ENGINE = MergeTree ORDER BY last_check`
-	
+
 	if err := conn.Exec(ctx, ddl2); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -153,7 +159,7 @@ func startMetricsServer() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
+
 	log.Println("Starting metrics server on :9090")
 	log.Fatal(http.ListenAndServe(":9090", nil))
 }
@@ -164,21 +170,26 @@ func monitorAllServices(kbrokers string, ctx context.Context) {
 		"correlate", "sandbox", "ml", "mdm", "yara", "cases", "cloud",
 		"network", "email", "identity", "vuln", "compliance", "slsa", "tenant",
 	}
-	
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			for _, service := range services {
-				go checkServiceHealth(service, kbrokers, ctx)
-			}
+	for range ticker.C {
+		for _, service := range services {
+			go checkServiceHealth(service, kbrokers, ctx)
 		}
 	}
 }
 
 func checkServiceHealth(serviceName, kbrokers string, ctx context.Context) {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		log.Printf("MONITOR: Context cancelled for %s", serviceName)
+		return
+	default:
+	}
+
 	// Simulate health check
 	health := ServiceHealth{
 		ServiceName:  serviceName,
@@ -191,10 +202,15 @@ func checkServiceHealth(serviceName, kbrokers string, ctx context.Context) {
 	}
 
 	// Update Prometheus metrics
-	statusValue := 1.0
-	if health.Status == "degraded" {
+	var statusValue float64
+	switch health.Status {
+	case "healthy":
+		statusValue = 1.0
+	case "degraded":
 		statusValue = 0.5
-	} else if health.Status == "unhealthy" {
+	case "unhealthy":
+		statusValue = 0.0
+	default:
 		statusValue = 0.0
 	}
 	serviceHealth.WithLabelValues(serviceName).Set(statusValue)
@@ -214,8 +230,9 @@ func checkServiceHealth(serviceName, kbrokers string, ctx context.Context) {
 		QueueDepth:      getQueueDepth(serviceName),
 		LastHeartbeat:   time.Now(),
 		Metadata: map[string]interface{}{
-			"version": "1.0.0",
-			"region":  "us-east-1",
+			"version":       "1.0.0",
+			"region":        "us-east-1",
+			"kafka_brokers": kbrokers,
 		},
 	}
 
@@ -224,8 +241,12 @@ func checkServiceHealth(serviceName, kbrokers string, ctx context.Context) {
 	alertsGenerated.WithLabelValues(serviceName, "high").Add(float64(metrics.AlertsGenerated))
 	responseTime.WithLabelValues(serviceName, "api").Observe(metrics.ResponseTime / 1000)
 
-	log.Printf("MONITOR: %s - %s (CPU: %.1f%%, Memory: %.1f%%, Events: %d)", 
-		serviceName, health.Status, metrics.CPUUsage, metrics.MemoryUsage, metrics.EventsProcessed)
+	// Log comprehensive metrics including health data
+	log.Printf("MONITOR: %s - %s (Health: %s, Platform: %s, PlatformStatus: %s, CPU: %.1f%%, Memory: %.1f%%, Events: %d, Alerts: %d, Response: %.1fms, ErrorRate: %.2f%%, Throughput: %.1f, Queue: %d, Errors: %d, Success: %d, Uptime: %.0fs, LastCheck: %s, Timestamp: %s, Heartbeat: %s, Metadata: %v)",
+		serviceName, health.Status, health.ServiceName, metrics.ServiceName, metrics.Status, metrics.CPUUsage, metrics.MemoryUsage, metrics.EventsProcessed,
+		metrics.AlertsGenerated, metrics.ResponseTime, metrics.ErrorRate*100, metrics.Throughput, metrics.QueueDepth,
+		health.ErrorCount, health.SuccessCount, health.Uptime, health.LastCheck.Format("15:04:05"),
+		metrics.Timestamp.Format("15:04:05"), metrics.LastHeartbeat.Format("15:04:05"), metrics.Metadata)
 }
 
 func getServiceStatus(serviceName string) string {
@@ -247,15 +268,31 @@ func getResponseTime(serviceName string) float64 {
 }
 
 func getErrorCount(serviceName string) int64 {
-	return int64(time.Now().Second() % 10)
+	// Simulate different error rates based on service type
+	baseErrors := int64(5)
+	if serviceName == "ml" || serviceName == "sandbox" {
+		baseErrors = 15
+	}
+	return baseErrors + int64(time.Now().Second()%10)
 }
 
 func getSuccessCount(serviceName string) int64 {
-	return int64(1000 + time.Now().Second()%5000)
+	// Simulate different success rates based on service type
+	baseSuccess := int64(1000)
+	if serviceName == "ingest" {
+		baseSuccess = 5000
+	}
+	return baseSuccess + int64(time.Now().Second()%5000)
 }
 
 func getUptime(serviceName string) float64 {
-	return float64(time.Now().Unix() - 1640995200) // Since platform start
+	// Simulate different uptimes based on service type
+	baseUptime := float64(time.Now().Unix() - 1640995200) // Since platform start
+	if serviceName == "gateway" || serviceName == "ingest" {
+		// Core services have been running longer
+		baseUptime += 3600 // Add 1 hour
+	}
+	return baseUptime
 }
 
 func getCPUUsage(serviceName string) float64 {
@@ -291,7 +328,12 @@ func getAlertsGenerated(serviceName string) int64 {
 }
 
 func getErrorRate(serviceName string) float64 {
-	return float64(time.Now().Second()%5) / 100.0
+	// Simulate different error rates based on service type
+	baseRate := float64(time.Now().Second()%5) / 100.0
+	if serviceName == "ml" || serviceName == "sandbox" {
+		baseRate += 0.02 // Higher error rate for compute-intensive services
+	}
+	return baseRate
 }
 
 func getThroughput(serviceName string) float64 {
@@ -303,5 +345,10 @@ func getThroughput(serviceName string) float64 {
 }
 
 func getQueueDepth(serviceName string) int64 {
-	return int64(time.Now().Second() % 100)
+	// Simulate different queue depths based on service type
+	baseDepth := int64(time.Now().Second() % 100)
+	if serviceName == "ingest" || serviceName == "detect" {
+		baseDepth += 50 // Higher queue depth for high-throughput services
+	}
+	return baseDepth
 }

@@ -13,82 +13,144 @@ import (
 )
 
 type IdentityEvent struct {
+	ID        string                 `json:"id"`
+	Timestamp time.Time              `json:"timestamp"`
+	UserID    string                 `json:"user_id"`
+	Username  string                 `json:"username"`
+	Email     string                 `json:"email"`
+	Domain    string                 `json:"domain"`
+	EventType string                 `json:"event_type"`
+	Source    string                 `json:"source"` // ad, aad, okta, ldap
+	IPAddress string                 `json:"ip_address"`
+	UserAgent string                 `json:"user_agent"`
+	Location  map[string]interface{} `json:"location"`
+	Device    map[string]interface{} `json:"device"`
+	SessionID string                 `json:"session_id"`
+	Metadata  map[string]interface{} `json:"metadata"`
+}
+
+type IdentityAlert struct {
 	ID          string                 `json:"id"`
 	Timestamp   time.Time              `json:"timestamp"`
-	Provider    string                 `json:"provider"` // ad, aad, okta
-	EventType   string                 `json:"event_type"`
+	AlertType   string                 `json:"alert_type"`
+	Severity    string                 `json:"severity"`
 	UserID      string                 `json:"user_id"`
 	Username    string                 `json:"username"`
 	Email       string                 `json:"email"`
-	DisplayName string                 `json:"display_name"`
-	Groups      []string               `json:"groups"`
-	Roles       []string               `json:"roles"`
-	SourceIP    string                 `json:"source_ip"`
-	UserAgent   string                 `json:"user_agent"`
-	Location    string                 `json:"location"`
-	DeviceID    string                 `json:"device_id"`
-	DeviceType  string                 `json:"device_type"`
-	RiskScore   float64                `json:"risk_score"`
-	Status      string                 `json:"status"`
+	Description string                 `json:"description"`
+	IOCs        []string               `json:"iocs"`
+	TTPs        []string               `json:"ttps"`
+	Confidence  float64                `json:"confidence"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 type UserProfile struct {
-	ID          string    `json:"id"`
-	Username    string    `json:"username"`
-	Email       string    `json:"email"`
-	DisplayName string    `json:"display_name"`
-	Groups      []string  `json:"groups"`
-	Roles       []string  `json:"roles"`
-	LastLogin   time.Time `json:"last_login"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Status      string    `json:"status"`
-	RiskScore   float64   `json:"risk_score"`
+	ID          string                 `json:"id"`
+	Username    string                 `json:"username"`
+	Email       string                 `json:"email"`
+	Domain      string                 `json:"domain"`
+	FirstName   string                 `json:"first_name"`
+	LastName    string                 `json:"last_name"`
+	Department  string                 `json:"department"`
+	Title       string                 `json:"title"`
+	Manager     string                 `json:"manager"`
+	Groups      []string               `json:"groups"`
+	Roles       []string               `json:"roles"`
+	Permissions []string               `json:"permissions"`
+	LastLogin   time.Time              `json:"last_login"`
+	Status      string                 `json:"status"` // active, inactive, locked, disabled
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-type IdentityConnector struct {
-	Provider string
-	Config   map[string]string
-	Enabled  bool
+type IdentityConfig struct {
+	Source   string                 `json:"source"`
+	Enabled  bool                   `json:"enabled"`
+	Config   map[string]interface{} `json:"config"`
+	LastSync time.Time              `json:"last_sync"`
+	Status   string                 `json:"status"`
+}
+
+type PrivilegeEscalation struct {
+	ID          string                 `json:"id"`
+	Timestamp   time.Time              `json:"timestamp"`
+	UserID      string                 `json:"user_id"`
+	Username    string                 `json:"username"`
+	OldGroups   []string               `json:"old_groups"`
+	NewGroups   []string               `json:"new_groups"`
+	AddedGroups []string               `json:"added_groups"`
+	Source      string                 `json:"source"`
+	Description string                 `json:"description"`
+	Confidence  float64                `json:"confidence"`
+	Metadata    map[string]interface{} `json:"metadata"`
 }
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "identity" }
+	if group == "" {
+		group = "identity"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure identity tables exist
 	createIdentityTables(conn, ctx)
 
-	// Initialize identity connectors
-	connectors := initializeIdentityConnectors()
+	// Event reader
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  strings.Split(kbrokers, ","),
+		Topic:    "musafir.events",
+		GroupID:  group,
+		MinBytes: 1, MaxBytes: 10e6,
+	})
+	defer reader.Close()
 
+	// Alert writer
 	writer := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: strings.Split(kbrokers, ","),
-		Topic:   "musafir.identity_events",
+		Topic:   "musafir.identity_alerts",
 	})
 
-	log.Printf("identity connectors starting brokers=%s", kbrokers)
+	// Initialize identity configurations
+	configs := initializeIdentityConfigs()
 
-	// Start each identity connector
-	for _, connector := range connectors {
-		if connector.Enabled {
-			go startIdentityConnector(connector, writer, ctx)
+	// Load user profiles
+	userProfiles := loadUserProfiles()
+
+	log.Printf("Identity service consuming events brokers=%s", kbrokers)
+	for {
+		m, err := reader.ReadMessage(ctx)
+		if err != nil {
+			log.Fatalf("kafka read: %v", err)
 		}
-	}
 
-	// Keep running
-	select {}
+		var event map[string]interface{}
+		if err := json.Unmarshal(m.Value, &event); err != nil {
+			log.Printf("unmarshal event: %v", err)
+			continue
+		}
+
+		// Process identity event
+		processIdentityEvent(event, writer, ctx, userProfiles)
+
+		// Monitor identity sources
+		go monitorIdentitySources(configs, writer, ctx)
+	}
 }
 
 func createIdentityTables(conn ch.Conn, ctx context.Context) {
@@ -96,337 +158,449 @@ func createIdentityTables(conn ch.Conn, ctx context.Context) {
 	ddl := `CREATE TABLE IF NOT EXISTS musafir_identity_events (
   id String,
   timestamp DateTime,
-  provider String,
-  event_type String,
   user_id String,
   username String,
   email String,
-  display_name String,
-  groups Array(String),
-  roles Array(String),
-  source_ip String,
+  domain String,
+  event_type String,
+  source String,
+  ip_address String,
   user_agent String,
   location String,
-  device_id String,
-  device_type String,
-  risk_score Float64,
-  status String,
+  device String,
+  session_id String,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 
+	// Identity alerts table
+	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_identity_alerts (
+  id String,
+  timestamp DateTime,
+  alert_type String,
+  severity String,
+  user_id String,
+  username String,
+  email String,
+  description String,
+  iocs Array(String),
+  ttps Array(String),
+  confidence Float64,
+  metadata String
+) ENGINE = MergeTree ORDER BY timestamp`
+
+	if err := conn.Exec(ctx, ddl2); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
 	// User profiles table
-	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_user_profiles (
+	ddl3 := `CREATE TABLE IF NOT EXISTS musafir_user_profiles (
   id String,
   username String,
   email String,
-  display_name String,
+  domain String,
+  first_name String,
+  last_name String,
+  department String,
+  title String,
+  manager String,
   groups Array(String),
   roles Array(String),
+  permissions Array(String),
   last_login DateTime,
+  status String,
   created_at DateTime,
   updated_at DateTime,
-  status String,
-  risk_score Float64
-) ENGINE = MergeTree ORDER BY created_at`
-	
-	if err := conn.Exec(ctx, ddl2); err != nil {
+  metadata String
+) ENGINE = MergeTree ORDER BY last_login`
+
+	if err := conn.Exec(ctx, ddl3); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Privilege escalation table
+	ddl4 := `CREATE TABLE IF NOT EXISTS musafir_privilege_escalation (
+  id String,
+  timestamp DateTime,
+  user_id String,
+  username String,
+  old_groups Array(String),
+  new_groups Array(String),
+  added_groups Array(String),
+  source String,
+  description String,
+  confidence Float64,
+  metadata String
+) ENGINE = MergeTree ORDER BY timestamp`
+
+	if err := conn.Exec(ctx, ddl4); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Identity configurations table
+	ddl5 := `CREATE TABLE IF NOT EXISTS musafir_identity_configs (
+  source String,
+  enabled UInt8,
+  config String,
+  last_sync DateTime,
+  status String
+) ENGINE = MergeTree ORDER BY source`
+
+	if err := conn.Exec(ctx, ddl5); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 }
 
-func initializeIdentityConnectors() []IdentityConnector {
-	connectors := []IdentityConnector{}
+func processIdentityEvent(event map[string]interface{}, writer *kafka.Writer, ctx context.Context, userProfiles map[string]UserProfile) {
+	// Extract identity data from event
+	identityEvent := extractIdentityData(event)
 
-	// Active Directory Connector
-	if os.Getenv("AD_SERVER") != "" {
-		connectors = append(connectors, IdentityConnector{
-			Provider: "ad",
-			Config: map[string]string{
-				"server":   os.Getenv("AD_SERVER"),
-				"username": os.Getenv("AD_USERNAME"),
-				"password": os.Getenv("AD_PASSWORD"),
-				"base_dn":  os.Getenv("AD_BASE_DN"),
-			},
-			Enabled: true,
-		})
-	}
+	// Store identity event
+	storeIdentityEvent(identityEvent)
 
-	// Azure Active Directory Connector
-	if os.Getenv("AAD_CLIENT_ID") != "" {
-		connectors = append(connectors, IdentityConnector{
-			Provider: "aad",
-			Config: map[string]string{
-				"client_id":     os.Getenv("AAD_CLIENT_ID"),
-				"client_secret": os.Getenv("AAD_CLIENT_SECRET"),
-				"tenant_id":     os.Getenv("AAD_TENANT_ID"),
-				"scope":         "https://graph.microsoft.com/.default",
-			},
-			Enabled: true,
-		})
-	}
+	// Analyze for identity threats
+	alerts := analyzeIdentityThreats(identityEvent, userProfiles)
 
-	// Okta Connector
-	if os.Getenv("OKTA_DOMAIN") != "" {
-		connectors = append(connectors, IdentityConnector{
-			Provider: "okta",
-			Config: map[string]string{
-				"domain":   os.Getenv("OKTA_DOMAIN"),
-				"api_token": os.Getenv("OKTA_API_TOKEN"),
-			},
-			Enabled: true,
-		})
-	}
-
-	return connectors
-}
-
-func startIdentityConnector(connector IdentityConnector, writer *kafka.Writer, ctx context.Context) {
-	log.Printf("Starting %s identity connector", connector.Provider)
-
-	switch connector.Provider {
-	case "ad":
-		startADConnector(connector, writer, ctx)
-	case "aad":
-		startAADConnector(connector, writer, ctx)
-	case "okta":
-		startOktaConnector(connector, writer, ctx)
-	}
-}
-
-func startADConnector(connector IdentityConnector, writer *kafka.Writer, ctx context.Context) {
-	// Simulate Active Directory events
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Generate sample AD events
-			events := generateADEvents()
-			for _, event := range events {
-				sendIdentityEvent(event, writer, ctx)
-			}
-		case <-ctx.Done():
-			return
+	// Send alerts
+	for _, alert := range alerts {
+		alertData, _ := json.Marshal(alert)
+		if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+			log.Printf("write identity alert: %v", err)
+		} else {
+			log.Printf("IDENTITY ALERT: %s - %s (%s)", alert.AlertType, alert.Username, alert.Severity)
 		}
 	}
 }
 
-func startAADConnector(connector IdentityConnector, writer *kafka.Writer, ctx context.Context) {
-	// Simulate Azure AD events
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+func extractIdentityData(event map[string]interface{}) IdentityEvent {
+	identityEvent := IdentityEvent{
+		ID:        generateIdentityEventID(),
+		Timestamp: time.Now(),
+		Metadata:  make(map[string]interface{}),
+	}
 
-	for {
-		select {
-		case <-ticker.C:
-			// Generate sample AAD events
-			events := generateAADEvents()
-			for _, event := range events {
-				sendIdentityEvent(event, writer, ctx)
-			}
-		case <-ctx.Done():
-			return
+	// Extract identity data from event
+	if eventData, ok := event["event"].(map[string]interface{}); ok {
+		if attrs, ok := eventData["attrs"].(map[string]interface{}); ok {
+			identityEvent.UserID = getString(attrs, "user_id")
+			identityEvent.Username = getString(attrs, "username")
+			identityEvent.Email = getString(attrs, "email")
+			identityEvent.Domain = getString(attrs, "domain")
+			identityEvent.EventType = getString(attrs, "event_type")
+			identityEvent.Source = getString(attrs, "source")
+			identityEvent.IPAddress = getString(attrs, "ip_address")
+			identityEvent.UserAgent = getString(attrs, "user_agent")
+			identityEvent.SessionID = getString(attrs, "session_id")
 		}
 	}
-}
 
-func startOktaConnector(connector IdentityConnector, writer *kafka.Writer, ctx context.Context) {
-	// Simulate Okta events
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Generate sample Okta events
-			events := generateOktaEvents()
-			for _, event := range events {
-				sendIdentityEvent(event, writer, ctx)
-			}
-		case <-ctx.Done():
-			return
-		}
+	// Extract user data
+	if userData, ok := event["user"].(map[string]interface{}); ok {
+		identityEvent.UserID = getString(userData, "id")
 	}
+
+	return identityEvent
 }
 
-func generateADEvents() []IdentityEvent {
-	events := []IdentityEvent{
-		{
-			ID:          generateIdentityEventID(),
+func analyzeIdentityThreats(event IdentityEvent, userProfiles map[string]UserProfile) []IdentityAlert {
+	var alerts []IdentityAlert
+
+	// Check for privilege escalation
+	if isPrivilegeEscalation(event, userProfiles) {
+		alert := IdentityAlert{
+			ID:          generateIdentityAlertID(),
 			Timestamp:   time.Now(),
-			Provider:    "ad",
-			EventType:   "user_login",
-			UserID:      "S-1-5-21-1234567890-1234567890-1234567890-1001",
+			AlertType:   "privilege_escalation",
+			Severity:    "high",
+			UserID:      event.UserID,
+			Username:    event.Username,
+			Email:       event.Email,
+			Description: "Privilege escalation detected",
+			IOCs:        []string{event.UserID, event.Username},
+			TTPs:        []string{"T1078", "T1098"},
+			Confidence:  0.8,
+			Metadata: map[string]interface{}{
+				"escalation_type": "group_addition",
+				"source":          event.Source,
+			},
+		}
+		alerts = append(alerts, alert)
+	}
+
+	// Check for suspicious login
+	if isSuspiciousLogin(event, userProfiles) {
+		alert := IdentityAlert{
+			ID:          generateIdentityAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "suspicious_login",
+			Severity:    "medium",
+			UserID:      event.UserID,
+			Username:    event.Username,
+			Email:       event.Email,
+			Description: "Suspicious login detected",
+			IOCs:        []string{event.IPAddress, event.UserAgent},
+			TTPs:        []string{"T1078", "T1098"},
+			Confidence:  0.7,
+			Metadata: map[string]interface{}{
+				"ip_address": event.IPAddress,
+				"user_agent": event.UserAgent,
+				"location":   event.Location,
+			},
+		}
+		alerts = append(alerts, alert)
+	}
+
+	// Check for account takeover
+	if isAccountTakeover(event, userProfiles) {
+		alert := IdentityAlert{
+			ID:          generateIdentityAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "account_takeover",
+			Severity:    "critical",
+			UserID:      event.UserID,
+			Username:    event.Username,
+			Email:       event.Email,
+			Description: "Account takeover detected",
+			IOCs:        []string{event.UserID, event.Username, event.IPAddress},
+			TTPs:        []string{"T1078", "T1098", "T1099"},
+			Confidence:  0.9,
+			Metadata: map[string]interface{}{
+				"takeover_indicators": []string{"unusual_location", "unusual_device"},
+				"ip_address":          event.IPAddress,
+				"user_agent":          event.UserAgent,
+			},
+		}
+		alerts = append(alerts, alert)
+	}
+
+	// Check for credential stuffing
+	if isCredentialStuffing(event, userProfiles) {
+		alert := IdentityAlert{
+			ID:          generateIdentityAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "credential_stuffing",
+			Severity:    "high",
+			UserID:      event.UserID,
+			Username:    event.Username,
+			Email:       event.Email,
+			Description: "Credential stuffing attack detected",
+			IOCs:        []string{event.IPAddress, event.UserAgent},
+			TTPs:        []string{"T1078", "T1098"},
+			Confidence:  0.85,
+			Metadata: map[string]interface{}{
+				"attack_type": "credential_stuffing",
+				"ip_address":  event.IPAddress,
+				"user_agent":  event.UserAgent,
+			},
+		}
+		alerts = append(alerts, alert)
+	}
+
+	return alerts
+}
+
+func isPrivilegeEscalation(event IdentityEvent, userProfiles map[string]UserProfile) bool {
+	// Check if user gained new privileges
+	if profile, exists := userProfiles[event.UserID]; exists {
+		// Simulate privilege escalation check
+		return len(profile.Groups) > 5 && event.EventType == "group_membership_changed"
+	}
+	return false
+}
+
+func isSuspiciousLogin(event IdentityEvent, userProfiles map[string]UserProfile) bool {
+	// Check for suspicious login patterns
+	if profile, exists := userProfiles[event.UserID]; exists {
+		// Check for unusual location
+		if event.Location != nil {
+			if country, ok := event.Location["country"].(string); ok {
+				if country != "US" && profile.LastLogin.After(time.Now().Add(-24*time.Hour)) {
+					return true
+				}
+			}
+		}
+
+		// Check for unusual time
+		hour := time.Now().Hour()
+		if hour < 6 || hour > 22 {
+			return true
+		}
+	}
+	return false
+}
+
+func isAccountTakeover(event IdentityEvent, userProfiles map[string]UserProfile) bool {
+	// Check for account takeover indicators
+	if profile, exists := userProfiles[event.UserID]; exists {
+		// Check for multiple failed logins followed by success
+		if event.EventType == "login_success" && profile.LastLogin.Before(time.Now().Add(-1*time.Hour)) {
+			return true
+		}
+
+		// Check for unusual device
+		if event.Device != nil {
+			if deviceType, ok := event.Device["type"].(string); ok {
+				if deviceType == "mobile" && profile.LastLogin.After(time.Now().Add(-24*time.Hour)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isCredentialStuffing(event IdentityEvent, userProfiles map[string]UserProfile) bool {
+	// Check for credential stuffing patterns
+	// Simulate credential stuffing detection
+	_ = userProfiles // Acknowledge parameter usage for future enhancement
+	return event.EventType == "login_failed" &&
+		strings.Contains(event.UserAgent, "bot") &&
+		event.IPAddress != ""
+}
+
+func loadUserProfiles() map[string]UserProfile {
+	// Load user profiles from database
+	// For now, return sample data
+	return map[string]UserProfile{
+		"user-001": {
+			ID:          "user-001",
 			Username:    "john.doe",
 			Email:       "john.doe@company.com",
-			DisplayName: "John Doe",
-			Groups:      []string{"Domain Users", "IT Admins", "Security Team"},
-			Roles:       []string{"admin", "security_analyst"},
-			SourceIP:    "192.168.1.100",
-			UserAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			Location:    "New York, US",
-			DeviceID:    "device-001",
-			DeviceType:  "laptop",
-			RiskScore:   0.2,
-			Status:      "success",
-			Metadata: map[string]interface{}{
-				"domain": "company.local",
-				"ou":     "OU=Users,DC=company,DC=local",
-			},
+			Domain:      "company.com",
+			FirstName:   "John",
+			LastName:    "Doe",
+			Department:  "IT",
+			Title:       "Security Analyst",
+			Manager:     "jane.smith",
+			Groups:      []string{"IT", "Security", "Analysts"},
+			Roles:       []string{"analyst", "user"},
+			Permissions: []string{"read", "write", "analyze"},
+			LastLogin:   time.Now().Add(-2 * time.Hour),
+			Status:      "active",
+			CreatedAt:   time.Now().Add(-365 * 24 * time.Hour),
+			UpdatedAt:   time.Now().Add(-1 * time.Hour),
+			Metadata:    make(map[string]interface{}),
 		},
-		{
-			ID:          generateIdentityEventID(),
-			Timestamp:   time.Now(),
-			Provider:    "ad",
-			EventType:   "user_logout",
-			UserID:      "S-1-5-21-1234567890-1234567890-1234567890-1002",
+		"user-002": {
+			ID:          "user-002",
 			Username:    "jane.smith",
 			Email:       "jane.smith@company.com",
-			DisplayName: "Jane Smith",
-			Groups:      []string{"Domain Users", "Finance Team"},
-			Roles:       []string{"user"},
-			SourceIP:    "192.168.1.101",
-			UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-			Location:    "San Francisco, US",
-			DeviceID:    "device-002",
-			DeviceType:  "desktop",
-			RiskScore:   0.1,
-			Status:      "success",
-			Metadata: map[string]interface{}{
-				"domain": "company.local",
-				"ou":     "OU=Users,DC=company,DC=local",
-			},
+			Domain:      "company.com",
+			FirstName:   "Jane",
+			LastName:    "Smith",
+			Department:  "IT",
+			Title:       "Security Manager",
+			Manager:     "bob.johnson",
+			Groups:      []string{"IT", "Security", "Managers", "Admins"},
+			Roles:       []string{"manager", "admin", "user"},
+			Permissions: []string{"read", "write", "analyze", "manage", "admin"},
+			LastLogin:   time.Now().Add(-1 * time.Hour),
+			Status:      "active",
+			CreatedAt:   time.Now().Add(-730 * 24 * time.Hour),
+			UpdatedAt:   time.Now().Add(-30 * time.Minute),
+			Metadata:    make(map[string]interface{}),
 		},
-	}
-
-	return events
-}
-
-func generateAADEvents() []IdentityEvent {
-	events := []IdentityEvent{
-		{
-			ID:          generateIdentityEventID(),
-			Timestamp:   time.Now(),
-			Provider:    "aad",
-			EventType:   "user_signin",
-			UserID:      "aad-user-123",
-			Username:    "admin@company.onmicrosoft.com",
-			Email:       "admin@company.onmicrosoft.com",
-			DisplayName: "Admin User",
-			Groups:      []string{"Global Administrators", "Security Administrators"},
-			Roles:       []string{"global_admin", "security_admin"},
-			SourceIP:    "203.0.113.1",
-			UserAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			Location:    "Seattle, US",
-			DeviceID:    "aad-device-001",
-			DeviceType:  "mobile",
-			RiskScore:   0.3,
-			Status:      "success",
-			Metadata: map[string]interface{}{
-				"tenant_id": "tenant-123",
-				"app_id":    "app-456",
-				"mfa_used":  true,
-			},
-		},
-		{
-			ID:          generateIdentityEventID(),
-			Timestamp:   time.Now(),
-			Provider:    "aad",
-			EventType:   "user_signin_failed",
-			UserID:      "aad-user-456",
-			Username:    "suspicious@company.onmicrosoft.com",
-			Email:       "suspicious@company.onmicrosoft.com",
-			DisplayName: "Suspicious User",
-			Groups:      []string{},
-			Roles:       []string{},
-			SourceIP:    "203.0.113.999",
-			UserAgent:   "curl/7.68.0",
-			Location:    "Unknown",
-			DeviceID:    "",
-			DeviceType:  "unknown",
-			RiskScore:   0.9,
-			Status:      "failed",
-			Metadata: map[string]interface{}{
-				"tenant_id": "tenant-123",
-				"app_id":    "app-456",
-				"error":     "invalid_credentials",
-				"risk_level": "high",
-			},
-		},
-	}
-
-	return events
-}
-
-func generateOktaEvents() []IdentityEvent {
-	events := []IdentityEvent{
-		{
-			ID:          generateIdentityEventID(),
-			Timestamp:   time.Now(),
-			Provider:    "okta",
-			EventType:   "user.session.start",
-			UserID:      "okta-user-123",
-			Username:    "user@company.com",
-			Email:       "user@company.com",
-			DisplayName: "Regular User",
-			Groups:      []string{"Everyone", "Engineering"},
-			Roles:       []string{"developer"},
-			SourceIP:    "198.51.100.1",
-			UserAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			Location:    "Austin, US",
-			DeviceID:    "okta-device-001",
-			DeviceType:  "laptop",
-			RiskScore:   0.1,
-			Status:      "success",
-			Metadata: map[string]interface{}{
-				"org_id": "org-123",
-				"app_id": "app-789",
-				"factor_type": "push",
-			},
-		},
-		{
-			ID:          generateIdentityEventID(),
-			Timestamp:   time.Now(),
-			Provider:    "okta",
-			EventType:   "user.mfa.factor.verify",
-			UserID:      "okta-user-456",
-			Username:    "admin@company.com",
-			Email:       "admin@company.com",
-			DisplayName: "Admin User",
-			Groups:      []string{"Everyone", "Administrators"},
-			Roles:       []string{"admin"},
-			SourceIP:    "198.51.100.2",
-			UserAgent:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-			Location:    "Chicago, US",
-			DeviceID:    "okta-device-002",
-			DeviceType:  "mobile",
-			RiskScore:   0.2,
-			Status:      "success",
-			Metadata: map[string]interface{}{
-				"org_id": "org-123",
-				"app_id": "app-789",
-				"factor_type": "totp",
-			},
-		},
-	}
-
-	return events
-}
-
-func sendIdentityEvent(event IdentityEvent, writer *kafka.Writer, ctx context.Context) {
-	eventData, _ := json.Marshal(event)
-	if err := writer.WriteMessages(ctx, kafka.Message{Value: eventData}); err != nil {
-		log.Printf("write identity event: %v", err)
-	} else {
-		log.Printf("IDENTITY EVENT: %s - %s (%s)", event.Provider, event.EventType, event.Username)
 	}
 }
 
+func initializeIdentityConfigs() []IdentityConfig {
+	return []IdentityConfig{
+		{
+			Source:   "ad",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"server":   "dc.company.com",
+				"username": "svc_account",
+				"password": "password123",
+				"base_dn":  "DC=company,DC=com",
+			},
+		},
+		{
+			Source:   "aad",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"tenant_id":     "tenant-123",
+				"client_id":     "client-456",
+				"client_secret": "secret-789",
+				"endpoint":      "https://graph.microsoft.com",
+			},
+		},
+		{
+			Source:   "okta",
+			Enabled:  true,
+			LastSync: time.Now(),
+			Status:   "active",
+			Config: map[string]interface{}{
+				"org_url":   "https://company.okta.com",
+				"api_token": "token-123",
+				"endpoint":  "https://company.okta.com/api/v1",
+			},
+		},
+	}
+}
+
+func monitorIdentitySources(configs []IdentityConfig, writer *kafka.Writer, ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		for _, config := range configs {
+			if config.Enabled {
+				// Simulate identity source monitoring
+				if time.Since(config.LastSync) > 15*time.Minute {
+					// Source is not syncing
+					alert := IdentityAlert{
+						ID:          generateIdentityAlertID(),
+						Timestamp:   time.Now(),
+						AlertType:   "source_sync_failed",
+						Severity:    "medium",
+						UserID:      "",
+						Username:    "",
+						Email:       "",
+						Description: "Identity source sync failed",
+						IOCs:        []string{config.Source},
+						TTPs:        []string{},
+						Confidence:  1.0,
+						Metadata: map[string]interface{}{
+							"source":    config.Source,
+							"last_sync": config.LastSync,
+						},
+					}
+
+					alertData, _ := json.Marshal(alert)
+					if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+						log.Printf("write source alert: %v", err)
+					}
+				}
+			}
+		}
+	}
+}
+
+func storeIdentityEvent(event IdentityEvent) {
+	// Store identity event in ClickHouse
+	// Implementation would store the event in the database
+}
+
+// Helper functions
 func generateIdentityEventID() string {
 	return "identity-" + time.Now().Format("20060102150405")
+}
+
+func generateIdentityAlertID() string {
+	return "identity-alert-" + time.Now().Format("20060102150405")
+}
+
+func getString(data map[string]interface{}, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
+	}
+	return ""
 }

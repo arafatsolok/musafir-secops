@@ -4,120 +4,135 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"net"
 	"os"
 	"strings"
 	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
 	"github.com/segmentio/kafka-go"
 )
 
 type NetworkEvent struct {
+	ID         string                 `json:"id"`
+	Timestamp  time.Time              `json:"timestamp"`
+	SourceIP   string                 `json:"source_ip"`
+	DestIP     string                 `json:"dest_ip"`
+	SourcePort int                    `json:"source_port"`
+	DestPort   int                    `json:"dest_port"`
+	Protocol   string                 `json:"protocol"`
+	Bytes      int64                  `json:"bytes"`
+	Packets    int64                  `json:"packets"`
+	Duration   float64                `json:"duration"`
+	Flags      string                 `json:"flags"`
+	Payload    string                 `json:"payload"`
+	Metadata   map[string]interface{} `json:"metadata"`
+}
+
+type NetworkAlert struct {
 	ID          string                 `json:"id"`
 	Timestamp   time.Time              `json:"timestamp"`
+	AlertType   string                 `json:"alert_type"`
+	Severity    string                 `json:"severity"`
 	SourceIP    string                 `json:"source_ip"`
 	DestIP      string                 `json:"dest_ip"`
-	SourcePort  int                    `json:"source_port"`
-	DestPort    int                    `json:"dest_port"`
+	Port        int                    `json:"port"`
 	Protocol    string                 `json:"protocol"`
-	PacketSize  int                    `json:"packet_size"`
-	Flags       string                 `json:"flags"`
-	Payload     []byte                 `json:"payload,omitempty"`
-	Direction   string                 `json:"direction"` // ingress/egress
-	Interface   string                 `json:"interface"`
-	VLAN        int                    `json:"vlan"`
+	Description string                 `json:"description"`
+	IOCs        []string               `json:"iocs"`
+	TTPs        []string               `json:"ttps"`
+	Confidence  float64                `json:"confidence"`
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-type NetFlowEvent struct {
-	ID          string    `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	SrcIP       string    `json:"src_ip"`
-	DstIP       string    `json:"dst_ip"`
-	SrcPort     int       `json:"src_port"`
-	DstPort     int       `json:"dst_port"`
-	Protocol    int       `json:"protocol"`
-	Bytes       int64     `json:"bytes"`
-	Packets     int64     `json:"packets"`
-	Duration    int64     `json:"duration"`
-	Flags       int       `json:"flags"`
-	Interface   int       `json:"interface"`
-	VLAN        int       `json:"vlan"`
-	NextHop     string    `json:"next_hop"`
-	EngineType  int       `json:"engine_type"`
-	EngineID    int       `json:"engine_id"`
+type NetworkSensor struct {
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	Type      string                 `json:"type"` // span, tap, mirror
+	Location  string                 `json:"location"`
+	Interface string                 `json:"interface"`
+	Status    string                 `json:"status"`
+	LastSeen  time.Time              `json:"last_seen"`
+	Config    map[string]interface{} `json:"config"`
 }
 
-type SuricataEvent struct {
-	ID          string                 `json:"id"`
-	Timestamp   time.Time              `json:"timestamp"`
-	EventType   string                 `json:"event_type"`
-	SourceIP    string                 `json:"src_ip"`
-	DestIP      string                 `json:"dest_ip"`
-	SourcePort  int                    `json:"src_port"`
-	DestPort    int                    `json:"dest_port"`
-	Protocol    string                 `json:"proto"`
-	Signature   string                 `json:"signature"`
-	Category    string                 `json:"category"`
-	Severity    int                    `json:"severity"`
-	Action      string                 `json:"action"`
-	FlowID      int64                  `json:"flow_id"`
-	Metadata    map[string]interface{} `json:"metadata"`
-}
-
-type NetworkMonitor struct {
-	interfaces []string
-	handles    []*pcap.Handle
-	eventChan  chan NetworkEvent
-	running    bool
+type NetworkFlow struct {
+	ID         string                 `json:"id"`
+	Timestamp  time.Time              `json:"timestamp"`
+	SourceIP   string                 `json:"source_ip"`
+	DestIP     string                 `json:"dest_ip"`
+	SourcePort int                    `json:"source_port"`
+	DestPort   int                    `json:"dest_port"`
+	Protocol   string                 `json:"protocol"`
+	Bytes      int64                  `json:"bytes"`
+	Packets    int64                  `json:"packets"`
+	Duration   float64                `json:"duration"`
+	Flags      string                 `json:"flags"`
+	State      string                 `json:"state"`
+	Metadata   map[string]interface{} `json:"metadata"`
 }
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "network" }
+	if group == "" {
+		group = "network"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure network tables exist
 	createNetworkTables(conn, ctx)
 
+	// Event reader
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  strings.Split(kbrokers, ","),
+		Topic:    "musafir.events",
+		GroupID:  group,
+		MinBytes: 1, MaxBytes: 10e6,
+	})
+	defer reader.Close()
+
+	// Alert writer
 	writer := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: strings.Split(kbrokers, ","),
-		Topic:   "musafir.network_events",
+		Topic:   "musafir.network_alerts",
 	})
 
-	// Initialize network monitor
-	monitor := NewNetworkMonitor()
-	if err := monitor.Start(); err != nil {
-		log.Fatalf("failed to start network monitor: %v", err)
+	// Initialize network sensors
+	sensors := initializeNetworkSensors()
+
+	log.Printf("Network service consuming events brokers=%s", kbrokers)
+	for {
+		m, err := reader.ReadMessage(ctx)
+		if err != nil {
+			log.Fatalf("kafka read: %v", err)
+		}
+
+		var event map[string]interface{}
+		if err := json.Unmarshal(m.Value, &event); err != nil {
+			log.Printf("unmarshal event: %v", err)
+			continue
+		}
+
+		// Process network event
+		processNetworkEvent(event, writer, ctx)
+
+		// Monitor network sensors
+		go monitorNetworkSensors(sensors, writer, ctx)
 	}
-	defer monitor.Stop()
-
-	log.Printf("network monitor starting brokers=%s", kbrokers)
-
-	// Process network events
-	go processNetworkEvents(monitor.GetEventChannel(), writer, ctx)
-
-	// Simulate NetFlow events
-	go simulateNetFlowEvents(writer, ctx)
-
-	// Simulate Suricata events
-	go simulateSuricataEvents(writer, ctx)
-
-	// Keep running
-	select {}
 }
 
 func createNetworkTables(conn ch.Conn, ctx context.Context) {
@@ -130,338 +145,362 @@ func createNetworkTables(conn ch.Conn, ctx context.Context) {
   source_port Int32,
   dest_port Int32,
   protocol String,
-  packet_size Int32,
+  bytes Int64,
+  packets Int64,
+  duration Float64,
   flags String,
-  direction String,
-  interface String,
-  vlan Int32,
+  payload String,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 
-	// NetFlow events table
-	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_netflow_events (
+	// Network alerts table
+	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_network_alerts (
   id String,
   timestamp DateTime,
-  src_ip String,
-  dst_ip String,
-  src_port Int32,
-  dst_port Int32,
-  protocol Int32,
-  bytes Int64,
-  packets Int64,
-  duration Int64,
-  flags Int32,
-  interface Int32,
-  vlan Int32,
-  next_hop String,
-  engine_type Int32,
-  engine_id Int32
+  alert_type String,
+  severity String,
+  source_ip String,
+  dest_ip String,
+  port Int32,
+  protocol String,
+  description String,
+  iocs Array(String),
+  ttps Array(String),
+  confidence Float64,
+  metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl2); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 
-	// Suricata events table
-	ddl3 := `CREATE TABLE IF NOT EXISTS musafir_suricata_events (
+	// Network flows table
+	ddl3 := `CREATE TABLE IF NOT EXISTS musafir_network_flows (
   id String,
   timestamp DateTime,
-  event_type String,
-  src_ip String,
+  source_ip String,
   dest_ip String,
-  src_port Int32,
+  source_port Int32,
   dest_port Int32,
   protocol String,
-  signature String,
-  category String,
-  severity Int32,
-  action String,
-  flow_id Int64,
+  bytes Int64,
+  packets Int64,
+  duration Float64,
+  flags String,
+  state String,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl3); err != nil {
+		log.Fatalf("clickhouse ddl: %v", err)
+	}
+
+	// Network sensors table
+	ddl4 := `CREATE TABLE IF NOT EXISTS musafir_network_sensors (
+  id String,
+  name String,
+  type String,
+  location String,
+  interface String,
+  status String,
+  last_seen DateTime,
+  config String
+) ENGINE = MergeTree ORDER BY last_seen`
+
+	if err := conn.Exec(ctx, ddl4); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
 }
 
-func NewNetworkMonitor() *NetworkMonitor {
-	return &NetworkMonitor{
-		interfaces: []string{"eth0", "eth1", "wlan0"},
-		eventChan:  make(chan NetworkEvent, 1000),
-		running:    false,
-	}
-}
+func processNetworkEvent(event map[string]interface{}, writer *kafka.Writer, ctx context.Context) {
+	// Extract network data from event
+	networkEvent := extractNetworkData(event)
 
-func (nm *NetworkMonitor) Start() error {
-	nm.running = true
+	// Store network event
+	storeNetworkEvent(networkEvent)
 
-	// Try to open network interfaces
-	for _, iface := range nm.interfaces {
-		handle, err := pcap.OpenLive(iface, 1024, true, pcap.BlockForever)
-		if err != nil {
-			log.Printf("warning: failed to open interface %s: %v", iface, err)
-			continue
-		}
-		nm.handles = append(nm.handles, handle)
-	}
+	// Analyze for network threats
+	alerts := analyzeNetworkThreats(networkEvent)
 
-	if len(nm.handles) == 0 {
-		log.Println("no network interfaces available, using simulation mode")
-		go nm.simulateNetworkEvents()
-		return nil
-	}
-
-	// Start packet capture on each interface
-	for i, handle := range nm.handles {
-		go nm.capturePackets(handle, nm.interfaces[i])
-	}
-
-	return nil
-}
-
-func (nm *NetworkMonitor) Stop() {
-	nm.running = false
-	for _, handle := range nm.handles {
-		handle.Close()
-	}
-	close(nm.eventChan)
-}
-
-func (nm *NetworkMonitor) GetEventChannel() <-chan NetworkEvent {
-	return nm.eventChan
-}
-
-func (nm *NetworkMonitor) capturePackets(handle *pcap.Handle, iface string) {
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	
-	for packet := range packetSource.Packets() {
-		if !nm.running {
-			break
-		}
-
-		event := nm.parsePacket(packet, iface)
-		if event != nil {
-			select {
-			case nm.eventChan <- *event:
-			default:
-				log.Printf("network event channel full, dropping packet")
-			}
+	// Send alerts
+	for _, alert := range alerts {
+		alertData, _ := json.Marshal(alert)
+		if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+			log.Printf("write network alert: %v", err)
+		} else {
+			log.Printf("NETWORK ALERT: %s - %s (%s)", alert.AlertType, alert.SourceIP, alert.Severity)
 		}
 	}
 }
 
-func (nm *NetworkMonitor) parsePacket(packet gopacket.Packet, iface string) *NetworkEvent {
-	// Parse network layers
-	networkLayer := packet.NetworkLayer()
-	if networkLayer == nil {
-		return nil
+func extractNetworkData(event map[string]interface{}) NetworkEvent {
+	networkEvent := NetworkEvent{
+		ID:        generateNetworkEventID(),
+		Timestamp: time.Now(),
+		Metadata:  make(map[string]interface{}),
 	}
 
-	transportLayer := packet.TransportLayer()
-	if transportLayer == nil {
-		return nil
+	// Extract network data from event
+	if eventData, ok := event["event"].(map[string]interface{}); ok {
+		if attrs, ok := eventData["attrs"].(map[string]interface{}); ok {
+			networkEvent.SourceIP = getString(attrs, "src_ip")
+			networkEvent.DestIP = getString(attrs, "dest_ip")
+			networkEvent.SourcePort = getInt(attrs, "src_port")
+			networkEvent.DestPort = getInt(attrs, "dest_port")
+			networkEvent.Protocol = getString(attrs, "protocol")
+			networkEvent.Bytes = getInt64(attrs, "bytes")
+			networkEvent.Packets = getInt64(attrs, "packets")
+			networkEvent.Duration = getFloat64(attrs, "duration")
+			networkEvent.Flags = getString(attrs, "flags")
+			networkEvent.Payload = getString(attrs, "payload")
+		}
 	}
 
-	// Extract IP information
-	srcIP, dstIP := networkLayer.NetworkFlow().Endpoints()
-	
-	// Extract port information
-	srcPort, dstPort := transportLayer.TransportFlow().Endpoints()
+	return networkEvent
+}
 
-	// Determine protocol
-	protocol := "unknown"
-	switch transportLayer.LayerType() {
-	case layers.LayerTypeTCP:
-		protocol = "tcp"
-	case layers.LayerTypeUDP:
-		protocol = "udp"
-	case layers.LayerTypeICMPv4:
-		protocol = "icmp"
+func analyzeNetworkThreats(event NetworkEvent) []NetworkAlert {
+	var alerts []NetworkAlert
+
+	// Check for suspicious ports
+	if isSuspiciousPort(event.DestPort) {
+		alert := NetworkAlert{
+			ID:          generateNetworkAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "suspicious_port",
+			Severity:    "medium",
+			SourceIP:    event.SourceIP,
+			DestIP:      event.DestIP,
+			Port:        event.DestPort,
+			Protocol:    event.Protocol,
+			Description: "Connection to suspicious port detected",
+			IOCs:        []string{event.DestIP, event.Protocol},
+			TTPs:        []string{"T1043", "T1044"},
+			Confidence:  0.7,
+			Metadata: map[string]interface{}{
+				"port":     event.DestPort,
+				"protocol": event.Protocol,
+			},
+		}
+		alerts = append(alerts, alert)
 	}
 
-	// Determine direction (simplified)
-	direction := "egress"
-	if strings.HasPrefix(srcIP.String(), "192.168.") || strings.HasPrefix(srcIP.String(), "10.") {
-		direction = "ingress"
+	// Check for data exfiltration
+	if isDataExfiltration(event) {
+		alert := NetworkAlert{
+			ID:          generateNetworkAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "data_exfiltration",
+			Severity:    "high",
+			SourceIP:    event.SourceIP,
+			DestIP:      event.DestIP,
+			Port:        event.DestPort,
+			Protocol:    event.Protocol,
+			Description: "Potential data exfiltration detected",
+			IOCs:        []string{event.DestIP, event.Protocol},
+			TTPs:        []string{"T1041", "T1048"},
+			Confidence:  0.8,
+			Metadata: map[string]interface{}{
+				"bytes":    event.Bytes,
+				"duration": event.Duration,
+			},
+		}
+		alerts = append(alerts, alert)
 	}
 
-	event := &NetworkEvent{
-		ID:         generateNetworkEventID(),
-		Timestamp:  packet.Metadata().Timestamp,
-		SourceIP:   srcIP.String(),
-		DestIP:     dstIP.String(),
-		SourcePort: int(srcPort.Endpoint().(layers.TCPPort)),
-		DestPort:   int(dstPort.Endpoint().(layers.TCPPort)),
-		Protocol:   protocol,
-		PacketSize: len(packet.Data()),
-		Direction:  direction,
-		Interface:  iface,
-		Metadata: map[string]interface{}{
-			"capture_length": packet.Metadata().CaptureLength,
-			"length":         packet.Metadata().Length,
+	// Check for lateral movement
+	if isLateralMovement(event) {
+		alert := NetworkAlert{
+			ID:          generateNetworkAlertID(),
+			Timestamp:   time.Now(),
+			AlertType:   "lateral_movement",
+			Severity:    "high",
+			SourceIP:    event.SourceIP,
+			DestIP:      event.DestIP,
+			Port:        event.DestPort,
+			Protocol:    event.Protocol,
+			Description: "Potential lateral movement detected",
+			IOCs:        []string{event.DestIP, event.Protocol},
+			TTPs:        []string{"T1021", "T1071"},
+			Confidence:  0.75,
+			Metadata: map[string]interface{}{
+				"port":     event.DestPort,
+				"protocol": event.Protocol,
+			},
+		}
+		alerts = append(alerts, alert)
+	}
+
+	return alerts
+}
+
+func isSuspiciousPort(port int) bool {
+	suspiciousPorts := []int{22, 23, 135, 139, 445, 1433, 3389, 5985, 5986}
+	for _, p := range suspiciousPorts {
+		if port == p {
+			return true
+		}
+	}
+	return false
+}
+
+func isDataExfiltration(event NetworkEvent) bool {
+	// Check for large data transfers to external IPs
+	return event.Bytes > 100*1024*1024 && isExternalIP(event.DestIP)
+}
+
+func isLateralMovement(event NetworkEvent) bool {
+	// Check for connections to internal IPs on admin ports
+	adminPorts := []int{22, 3389, 5985, 5986}
+	for _, port := range adminPorts {
+		if event.DestPort == port && isInternalIP(event.DestIP) {
+			return true
+		}
+	}
+	return false
+}
+
+func isExternalIP(ip string) bool {
+	// Simple check for external IPs (not RFC 1918)
+	return !strings.HasPrefix(ip, "10.") &&
+		!strings.HasPrefix(ip, "192.168.") &&
+		!strings.HasPrefix(ip, "172.")
+}
+
+func isInternalIP(ip string) bool {
+	// Check for internal IPs (RFC 1918)
+	return strings.HasPrefix(ip, "10.") ||
+		strings.HasPrefix(ip, "192.168.") ||
+		strings.HasPrefix(ip, "172.")
+}
+
+func initializeNetworkSensors() []NetworkSensor {
+	return []NetworkSensor{
+		{
+			ID:        "sensor-001",
+			Name:      "Core Switch SPAN",
+			Type:      "span",
+			Location:  "datacenter-1",
+			Interface: "eth0",
+			Status:    "active",
+			LastSeen:  time.Now(),
+			Config: map[string]interface{}{
+				"mirror_ports": []string{"1/0/1", "1/0/2"},
+				"vlan_filter":  []string{"10", "20", "30"},
+			},
+		},
+		{
+			ID:        "sensor-002",
+			Name:      "DMZ TAP",
+			Type:      "tap",
+			Location:  "dmz-1",
+			Interface: "eth1",
+			Status:    "active",
+			LastSeen:  time.Now(),
+			Config: map[string]interface{}{
+				"tap_type": "network",
+				"speed":    "1G",
+			},
+		},
+		{
+			ID:        "sensor-003",
+			Name:      "Internet Gateway Mirror",
+			Type:      "mirror",
+			Location:  "internet-gateway",
+			Interface: "eth2",
+			Status:    "active",
+			LastSeen:  time.Now(),
+			Config: map[string]interface{}{
+				"mirror_direction": "both",
+				"filter_rules":     []string{"tcp", "udp"},
+			},
 		},
 	}
-
-	// Extract flags for TCP
-	if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
-		if tcp, ok := tcpLayer.(*layers.TCP); ok {
-			event.Flags = tcpFlagsToString(tcp.Flags)
-		}
-	}
-
-	return event
 }
 
-func (nm *NetworkMonitor) simulateNetworkEvents() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+func monitorNetworkSensors(sensors []NetworkSensor, writer *kafka.Writer, ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if !nm.running {
-				return
-			}
+			for _, sensor := range sensors {
+				// Check sensor health
+				if time.Since(sensor.LastSeen) > 5*time.Minute {
+					// Sensor is down
+					alert := NetworkAlert{
+						ID:          generateNetworkAlertID(),
+						Timestamp:   time.Now(),
+						AlertType:   "sensor_down",
+						Severity:    "high",
+						SourceIP:    "",
+						DestIP:      "",
+						Port:        0,
+						Protocol:    "",
+						Description: "Network sensor is down",
+						IOCs:        []string{sensor.ID},
+						TTPs:        []string{},
+						Confidence:  1.0,
+						Metadata: map[string]interface{}{
+							"sensor_id":   sensor.ID,
+							"sensor_name": sensor.Name,
+							"last_seen":   sensor.LastSeen,
+						},
+					}
 
-			// Generate simulated network events
-			event := &NetworkEvent{
-				ID:         generateNetworkEventID(),
-				Timestamp:  time.Now(),
-				SourceIP:   "192.168.1.100",
-				DestIP:     "8.8.8.8",
-				SourcePort: 12345,
-				DestPort:   53,
-				Protocol:   "udp",
-				PacketSize: 64,
-				Direction:  "egress",
-				Interface:  "eth0",
-				Metadata: map[string]interface{}{
-					"simulated": true,
-				},
-			}
-
-			select {
-			case nm.eventChan <- *event:
-			default:
-			}
-		}
-	}
-}
-
-func processNetworkEvents(eventChan <-chan NetworkEvent, writer *kafka.Writer, ctx context.Context) {
-	for event := range eventChan {
-		eventData, _ := json.Marshal(event)
-		if err := writer.WriteMessages(ctx, kafka.Message{Value: eventData}); err != nil {
-			log.Printf("write network event: %v", err)
-		} else {
-			log.Printf("NETWORK EVENT: %s -> %s:%d (%s)", event.SourceIP, event.DestIP, event.DestPort, event.Protocol)
-		}
-	}
-}
-
-func simulateNetFlowEvents(writer *kafka.Writer, ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			event := NetFlowEvent{
-				ID:         generateNetworkEventID(),
-				Timestamp:  time.Now(),
-				SrcIP:      "192.168.1.100",
-				DstIP:      "10.0.0.1",
-				SrcPort:    80,
-				DstPort:    8080,
-				Protocol:   6, // TCP
-				Bytes:      1024,
-				Packets:    10,
-				Duration:   5000,
-				Flags:      2,
-				Interface:  1,
-				VLAN:       0,
-				NextHop:    "192.168.1.1",
-				EngineType: 0,
-				EngineID:   1,
-			}
-
-			eventData, _ := json.Marshal(event)
-			if err := writer.WriteMessages(ctx, kafka.Message{Value: eventData}); err != nil {
-				log.Printf("write netflow event: %v", err)
-			} else {
-				log.Printf("NETFLOW EVENT: %s -> %s (%d bytes)", event.SrcIP, event.DstIP, event.Bytes)
+					alertData, _ := json.Marshal(alert)
+					if err := writer.WriteMessages(ctx, kafka.Message{Value: alertData}); err != nil {
+						log.Printf("write sensor alert: %v", err)
+					}
+				}
 			}
 		}
 	}
 }
 
-func simulateSuricataEvents(writer *kafka.Writer, ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	signatures := []string{
-		"ET MALWARE Suspicious DNS Query",
-		"ET TROJAN Possible C2 Communication",
-		"ET POLICY Suspicious User Agent",
-		"ET SCAN Potential Port Scan",
-		"ET INFO Suspicious File Download",
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			event := SuricataEvent{
-				ID:         generateNetworkEventID(),
-				Timestamp:  time.Now(),
-				EventType:  "alert",
-				SourceIP:   "192.168.1.50",
-				DestIP:     "203.0.113.1",
-				SourcePort: 12345,
-				DestPort:   80,
-				Protocol:   "tcp",
-				Signature:  signatures[time.Now().Second()%len(signatures)],
-				Category:   "malware",
-				Severity:   2,
-				Action:     "alert",
-				FlowID:     int64(time.Now().Unix()),
-				Metadata: map[string]interface{}{
-					"simulated": true,
-				},
-			}
-
-			eventData, _ := json.Marshal(event)
-			if err := writer.WriteMessages(ctx, kafka.Message{Value: eventData}); err != nil {
-				log.Printf("write suricata event: %v", err)
-			} else {
-				log.Printf("SURICATA EVENT: %s - %s", event.Signature, event.SourceIP)
-			}
-		}
-	}
+func storeNetworkEvent(event NetworkEvent) {
+	// Store network event in ClickHouse
+	// Implementation would store the event in the database
 }
 
+// Helper functions
 func generateNetworkEventID() string {
 	return "net-" + time.Now().Format("20060102150405")
 }
 
-func tcpFlagsToString(flags layers.TCPFlags) string {
-	var flagStrs []string
-	if flags.FIN() { flagStrs = append(flagStrs, "FIN") }
-	if flags.SYN() { flagStrs = append(flagStrs, "SYN") }
-	if flags.RST() { flagStrs = append(flagStrs, "RST") }
-	if flags.PSH() { flagStrs = append(flagStrs, "PSH") }
-	if flags.ACK() { flagStrs = append(flagStrs, "ACK") }
-	if flags.URG() { flagStrs = append(flagStrs, "URG") }
-	if flags.ECE() { flagStrs = append(flagStrs, "ECE") }
-	if flags.CWR() { flagStrs = append(flagStrs, "CWR") }
-	if flags.NS() { flagStrs = append(flagStrs, "NS") }
-	
-	if len(flagStrs) == 0 {
-		return "none"
+func generateNetworkAlertID() string {
+	return "net-alert-" + time.Now().Format("20060102150405")
+}
+
+func getString(data map[string]interface{}, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
 	}
-	return strings.Join(flagStrs, ",")
+	return ""
+}
+
+func getInt(data map[string]interface{}, key string) int {
+	if val, ok := data[key].(float64); ok {
+		return int(val)
+	}
+	return 0
+}
+
+func getInt64(data map[string]interface{}, key string) int64 {
+	if val, ok := data[key].(float64); ok {
+		return int64(val)
+	}
+	return 0
+}
+
+func getFloat64(data map[string]interface{}, key string) float64 {
+	if val, ok := data[key].(float64); ok {
+		return val
+	}
+	return 0.0
 }

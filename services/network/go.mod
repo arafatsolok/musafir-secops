@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/network
+module github.com/arafatsolok/musafir-secops/services/network
 
 go 1.22
 

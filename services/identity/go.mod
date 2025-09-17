@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/identity
+module github.com/arafatsolok/musafir-secops/services/identity
 
 go 1.22
 

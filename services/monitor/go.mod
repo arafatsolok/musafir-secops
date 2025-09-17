@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/monitor
+module github.com/arafatsolok/musafir-secops/services/monitor
 
 go 1.22
 

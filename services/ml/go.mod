@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/ml
+module github.com/arafatsolok/musafir-secops/services/ml
 
 go 1.22
 

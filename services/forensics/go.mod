@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/forensics
+module github.com/arafatsolok/musafir-secops/services/forensics
 
 go 1.22
 

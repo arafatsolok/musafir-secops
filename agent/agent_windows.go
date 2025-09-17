@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/musafirsec/musafir/agent/ransomware"
+	"github.com/arafatsolok/musafir-secops/agent/ransomware"
 )
 
 // Windows-specific agent capabilities

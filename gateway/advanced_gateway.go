@@ -24,6 +24,13 @@ type AdvancedGateway struct {
 	wsUpgrader      websocket.Upgrader
 	services        map[string]*ServiceConfig
 }
+type ServiceConfig struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Port    string `json:"port"`
+	Health  string `json:"health"`
+	Enabled bool   `json:"enabled"`
+}
 
 type CircuitBreaker struct {
 	State        string        `json:"state"` // closed, open, half-open
@@ -598,7 +605,7 @@ func (g *AdvancedGateway) searchHandler(w http.ResponseWriter, r *http.Request) 
 
 func (g *AdvancedGateway) servicesHandler(w http.ResponseWriter, r *http.Request) {
 	services := make([]map[string]interface{}, 0)
-	for name, config := range g.services {
+	for _, config := range g.services {
 		service := map[string]interface{}{
 			"name":    config.Name,
 			"url":     config.URL,

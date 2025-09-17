@@ -1,3 +1,5 @@
+//go:build yara
+
 package main
 
 import (
@@ -24,14 +26,14 @@ type YARAScanRequest struct {
 }
 
 type YARAScanResult struct {
-	ID          string                 `json:"id"`
-	FilePath    string                 `json:"file_path"`
-	FileHash    string                 `json:"file_hash"`
-	Matches     []YARAMatch            `json:"matches"`
-	ScanTime    int64                  `json:"scan_time_ms"`
-	Error       string                 `json:"error,omitempty"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	ID        string                 `json:"id"`
+	FilePath  string                 `json:"file_path"`
+	FileHash  string                 `json:"file_hash"`
+	Matches   []YARAMatch            `json:"matches"`
+	ScanTime  int64                  `json:"scan_time_ms"`
+	Error     string                 `json:"error,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+	Metadata  map[string]interface{} `json:"metadata"`
 }
 
 type YARAMatch struct {
@@ -57,18 +59,28 @@ type YARAScanner struct {
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	topic := os.Getenv("YARA_TOPIC")
-	if topic == "" { topic = "musafir.yara_requests" }
+	if topic == "" {
+		topic = "musafir.yara_requests"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "yara" }
+	if group == "" {
+		group = "yara"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
 	ctx := context.Background()
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
 	// Ensure YARA tables exist
@@ -97,7 +109,9 @@ func main() {
 	log.Printf("YARA scanner consuming topic=%s brokers=%s", topic, kbrokers)
 	for {
 		m, err := reader.ReadMessage(ctx)
-		if err != nil { log.Fatalf("kafka read: %v", err) }
+		if err != nil {
+			log.Fatalf("kafka read: %v", err)
+		}
 
 		var request YARAScanRequest
 		if err := json.Unmarshal(m.Value, &request); err != nil {
@@ -107,7 +121,7 @@ func main() {
 
 		// Scan file with YARA
 		result := scanner.ScanFile(request)
-		
+
 		// Send result
 		resultData, _ := json.Marshal(result)
 		if err := writer.WriteMessages(ctx, kafka.Message{Value: resultData}); err != nil {
@@ -128,7 +142,7 @@ func createYARATables(conn ch.Conn, ctx context.Context) {
   metadata String,
   created_at DateTime DEFAULT now()
 ) ENGINE = MergeTree ORDER BY created_at`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -144,7 +158,7 @@ func createYARATables(conn ch.Conn, ctx context.Context) {
   timestamp DateTime,
   metadata String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl2); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -186,7 +200,7 @@ func (s *YARAScanner) Close() {
 
 func (s *YARAScanner) ScanFile(request YARAScanRequest) YARAScanResult {
 	startTime := time.Now()
-	
+
 	result := YARAScanResult{
 		ID:        request.ID,
 		FilePath:  request.FilePath,

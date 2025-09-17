@@ -1,4 +1,4 @@
-module github.com/musafirsec/musafir/services/email
+module github.com/arafatsolok/musafir-secops/services/email
 
 go 1.22
 

@@ -80,6 +80,8 @@ sudo chmod 0644 "$ENV_FILE"
 log "Starting infrastructure via Docker Compose..."
 cd "$APP_DIR/infra"
 sudo docker compose -f docker-compose.yml up -d || true
+# Precreate custom network used by advanced compose to avoid errors
+sudo docker network create musafir-network || true
 if [[ -f docker-compose-advanced.yml ]]; then
   sudo docker compose -f docker-compose-advanced.yml up -d || true
 fi
@@ -106,7 +108,8 @@ done
 
 log "Building UI..."
 cd "$APP_DIR/ui"
-npm ci || npm install
+# Use npm install to avoid lockfile sync errors on fresh machines
+npm install
 npm run build
 sudo rm -rf /var/www/musafir-ui
 sudo mkdir -p /var/www/musafir-ui
@@ -151,8 +154,10 @@ server {
 }
 NGINX
 
+# Ensure our site is enabled and default is disabled
+sudo rm -f /etc/nginx/sites-enabled/default || true
 sudo ln -sf "$NGINX_SITE" "$NGINX_SITE_LINK" || true
-sudo nginx -t && sudo systemctl restart nginx
+sudo nginx -t && sudo systemctl reload nginx
 
 log "Creating systemd services..."
 # Gateway service
@@ -263,3 +268,54 @@ Next steps:
   - Logs: journalctl -u musafir-gateway.service -f
 
 SUMMARY
+
+log "Running sanity checks..."
+
+# 1) Gateway health
+if curl -fsS http://localhost:8080/health >/dev/null; then
+  echo "[PASS] Gateway health endpoint reachable"
+else
+  echo "[FAIL] Gateway health endpoint NOT reachable"
+fi
+
+# 2) Nginx site enabled
+if ls -1 /etc/nginx/sites-enabled | grep -q '^musafir$'; then
+  echo "[PASS] Nginx site 'musafir' enabled"
+else
+  echo "[FAIL] Nginx site 'musafir' not enabled"
+fi
+
+# 3) UI artifacts present
+if [ -f /var/www/musafir-ui/index.html ]; then
+  echo "[PASS] UI published to /var/www/musafir-ui (index.html found)"
+else
+  echo "[FAIL] UI not published to /var/www/musafir-ui"
+fi
+
+# 4) Gateway systemd status
+if systemctl is-active --quiet musafir-gateway.service; then
+  echo "[PASS] musafir-gateway.service is active"
+else
+  echo "[FAIL] musafir-gateway.service is NOT active"
+fi
+
+echo
+echo "===== Credentials & Access ====="
+if [ -f /etc/musafir.env ]; then
+  # shellcheck disable=SC1091
+  . /etc/musafir.env || true
+  echo "Gateway Secrets (from /etc/musafir.env):"
+  echo "  GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-<unset>}"
+  echo "  GATEWAY_HMAC_SECRET: ${GATEWAY_HMAC_SECRET:-<unset>}"
+  echo "  PORT: ${PORT:-8080}"
+else
+  echo "  /etc/musafir.env not found"
+fi
+
+echo
+echo "Default service credentials (from docker-compose-advanced.yml):"
+echo "  Grafana: admin / admin (http://<server_ip>:3001)"
+echo "  RabbitMQ: musafir / musafir123 (http://<server_ip>:15672)"
+echo "  MinIO: musafir / musafir123 (http://<server_ip>:9002)"
+echo "  Neo4j: neo4j / password (http://<server_ip>:7474)"
+echo "  Postgres: musafir / musafir123 (psql on 5432)"

@@ -34,6 +34,8 @@ Next-gen, all-in-one security platform for ransomware-era defense. This monorepo
 - Compliance & Governance (ISO 27001, SOC2, GDPR, NIST, PCI DSS)
 - SLSA L3 supply chain security pipelines
 - Multi-tenant data isolation and management
+- Advanced AI-powered threat prediction and behavior analysis
+- Real-time platform monitoring with Prometheus metrics
 - Advanced threat hunting and forensics capabilities
 
 ## Repo Layout
@@ -100,9 +102,11 @@ This will start:
 19. **Compliance Service**: Compliance monitoring → Compliance events
 20. **SLSA Service**: Supply chain security → SLSA events
 21. **Tenant Service**: Multi-tenant management → Tenant events
-22. **Responder**: SOAR playbook executor
-23. **Agent**: Multi-platform event generator → Gateway
-24. **UI**: React dashboard at http://localhost:3000
+22. **Monitor Service**: Platform monitoring → Prometheus metrics
+23. **AI Service**: Advanced AI insights → Threat predictions
+24. **Responder**: SOAR playbook executor
+25. **Agent**: Multi-platform event generator → Gateway
+26. **UI**: React dashboard at http://localhost:3000
 
 ### Manual Run (if needed)
 - Infra: `cd .\infra && docker compose up -d`
@@ -133,11 +137,13 @@ This will start:
 17. **Compliance Service** monitors compliance frameworks and generates compliance events to `musafir.compliance_events`
 18. **SLSA Service** manages supply chain security and generates SLSA events to `musafir.slsa_events`
 19. **Tenant Service** manages multi-tenant isolation and generates tenant events to `musafir.tenant_events`
-20. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
-21. **Cases Service** auto-creates incident cases from high-severity alerts
-22. **MDM Service** manages mobile devices and executes security policies
-23. **Responder** executes SOAR playbooks on correlated alerts
-24. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, and KQL query workbench
+20. **Monitor Service** tracks platform health and generates Prometheus metrics
+21. **AI Service** provides advanced AI insights and threat predictions to `musafir.ai_insights`
+22. **Correlator** analyzes all alerts and generates correlated attack patterns to `musafir.correlated_alerts`
+23. **Cases Service** auto-creates incident cases from high-severity alerts
+24. **MDM Service** manages mobile devices and executes security policies
+25. **Responder** executes SOAR playbooks on correlated alerts
+26. **UI Dashboard** shows real-time events, alerts, attack patterns, ML insights, AI predictions, and KQL query workbench
 
 ## Licensing
 TBD

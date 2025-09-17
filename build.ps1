@@ -271,6 +271,28 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-Location ../..
 
+# Build Monitor Service
+Write-Host "Building Monitor Service..." -ForegroundColor Cyan
+Set-Location services/monitor
+go mod tidy
+go build -o ../../bin/monitor.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build Monitor service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
+# Build AI Service
+Write-Host "Building AI Service..." -ForegroundColor Cyan
+Set-Location services/ai
+go mod tidy
+go build -o ../../bin/ai.exe .
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to build AI service" -ForegroundColor Red
+    exit 1
+}
+Set-Location ../..
+
 # Build UI
 Write-Host "Building UI..." -ForegroundColor Cyan
 Set-Location ui

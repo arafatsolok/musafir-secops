@@ -43,6 +43,8 @@ $env:KAFKA_GROUP_VULN = "vuln"
 $env:KAFKA_GROUP_COMPLIANCE = "compliance"
 $env:KAFKA_GROUP_SLSA = "slsa"
 $env:KAFKA_GROUP_TENANT = "tenant"
+$env:KAFKA_GROUP_MONITOR = "monitor"
+$env:KAFKA_GROUP_AI = "ai"
 $env:SANDBOX_TOPIC = "musafir.sandbox_requests"
 $env:YARA_TOPIC = "musafir.yara_requests"
 $env:CLICKHOUSE_DSN = "tcp://localhost:9000?database=default"
@@ -150,6 +152,16 @@ Write-Host "Starting Tenant Service..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\tenant.exe" -WindowStyle Normal
 Start-Sleep -Seconds 2
 
+# Start Monitor Service
+Write-Host "Starting Monitor Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\monitor.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
+# Start AI Service
+Write-Host "Starting AI Service..." -ForegroundColor Cyan
+Start-Process -FilePath ".\bin\ai.exe" -WindowStyle Normal
+Start-Sleep -Seconds 2
+
 # Start Agent
 Write-Host "Starting Agent..." -ForegroundColor Cyan
 Start-Process -FilePath ".\bin\agent-windows.exe" -WindowStyle Normal
@@ -164,11 +176,13 @@ Write-Host "All components started!" -ForegroundColor Green
 Write-Host "Dashboard: http://localhost:3000" -ForegroundColor Green
 Write-Host "Gateway Health: http://localhost:8080/healthz" -ForegroundColor Green
 Write-Host "ClickHouse: http://localhost:8123" -ForegroundColor Green
+Write-Host "Prometheus Metrics: http://localhost:9090/metrics" -ForegroundColor Green
+Write-Host "Monitor Health: http://localhost:9090/health" -ForegroundColor Green
 Write-Host ""
 Write-Host "Press any key to stop all services..." -ForegroundColor Yellow
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 # Stop all processes
 Write-Host "Stopping services..." -ForegroundColor Yellow
-Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud|network|email|identity|vuln|compliance|slsa|tenant"} | Stop-Process -Force
+Get-Process | Where-Object {$_.ProcessName -match "gateway|agent|ingest|detect|respond|ueba|threatintel|correlate|sandbox|ml|mdm|yara|cases|cloud|network|email|identity|vuln|compliance|slsa|tenant|monitor|ai"} | Stop-Process -Force
 docker compose -f infra/docker-compose.yml down

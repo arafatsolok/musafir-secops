@@ -2,18 +2,23 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"math"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/kafka-go"
-	"github.com/sjwhitworth/golearn/base"
-	"github.com/sjwhitworth/golearn/evaluation"
-	"github.com/sjwhitworth/golearn/knn"
 )
 
 type Event struct {
@@ -44,13 +49,13 @@ type MLFeature struct {
 }
 
 type MLPrediction struct {
-	EventID       string    `json:"event_id"`
-	Prediction    string    `json:"prediction"` // normal, suspicious, malicious
-	Confidence    float64   `json:"confidence"`
-	Features      MLFeature `json:"features"`
-	AnomalyScore  float64   `json:"anomaly_score"`
-	Timestamp     time.Time `json:"timestamp"`
-	ModelVersion  string    `json:"model_version"`
+	EventID      string    `json:"event_id"`
+	Prediction   string    `json:"prediction"` // normal, suspicious, malicious
+	Confidence   float64   `json:"confidence"`
+	Features     MLFeature `json:"features"`
+	AnomalyScore float64   `json:"anomaly_score"`
+	Timestamp    time.Time `json:"timestamp"`
+	ModelVersion string    `json:"model_version"`
 }
 
 type MLModel struct {
@@ -63,64 +68,173 @@ type MLModel struct {
 
 func main() {
 	kbrokers := os.Getenv("KAFKA_BROKERS")
-	if kbrokers == "" { kbrokers = "localhost:9092" }
+	if kbrokers == "" {
+		kbrokers = "localhost:9092"
+	}
 	topic := os.Getenv("KAFKA_TOPIC")
-	if topic == "" { topic = "musafir.events" }
+	if topic == "" {
+		topic = "musafir.events"
+	}
 	group := os.Getenv("KAFKA_GROUP")
-	if group == "" { group = "ml" }
+	if group == "" {
+		group = "ml"
+	}
 
 	chDsn := os.Getenv("CLICKHOUSE_DSN")
-	if chDsn == "" { chDsn = "tcp://localhost:9000?database=default" }
+	if chDsn == "" {
+		chDsn = "tcp://localhost:9000?database=default"
+	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { <-shutdownCh; log.Println("ml service: shutdown signal received"); cancel() }()
+
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
-	if err != nil { log.Fatalf("clickhouse connect: %v", err) }
+	if err != nil {
+		log.Fatalf("clickhouse connect: %v", err)
+	}
 	defer conn.Close()
 
-	// Ensure ML tables exist
-	createMLTables(conn, ctx)
+	// Ensure ML tables exist (retry)
+	retryWithBackoff(ctx, 3, 2*time.Second, func() error { createMLTables(conn, ctx); return nil })
+
+	// Start HTTP health/metrics server
+	httpServer := startHTTPServer(":8088")
+	defer func() {
+		ctxShutdown, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		_ = httpServer.Shutdown(ctxShutdown)
+	}()
 
 	// Load or train ML model
 	model := loadOrTrainModel(conn, ctx)
 
+	// Kafka dialer
+	dialer := &kafka.Dialer{Timeout: 10 * time.Second, DualStack: true, Resolver: &net.Resolver{}}
+
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  strings.Split(kbrokers, ","),
-		Topic:    topic,
-		GroupID:  group,
-		MinBytes: 1, MaxBytes: 10e6,
+		Brokers:         strings.Split(kbrokers, ","),
+		Topic:           topic,
+		GroupID:         group,
+		Dialer:          dialer,
+		MinBytes:        1,
+		MaxBytes:        10e6,
+		MaxWait:         500 * time.Millisecond,
+		ReadLagInterval: 5 * time.Second,
 	})
 	defer reader.Close()
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: strings.Split(kbrokers, ","),
-		Topic:   "musafir.ml_predictions",
+		Brokers:      strings.Split(kbrokers, ","),
+		Topic:        "musafir.ml_predictions",
+		Dialer:       dialer,
+		RequiredAcks: int(kafka.RequireAll),
+		Balancer:     &kafka.LeastBytes{},
+		Async:        false,
+		BatchTimeout: 200 * time.Millisecond,
 	})
+	defer writer.Close()
+
+	// DLQ writer
+	dlqWriter := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:      strings.Split(kbrokers, ","),
+		Topic:        "musafir.dlq.ml",
+		Dialer:       dialer,
+		RequiredAcks: int(kafka.RequireAll),
+		Balancer:     &kafka.Hash{},
+	})
+	defer dlqWriter.Close()
+
+	// Idempotency cache for processed messages
+	var (
+		seenMu   sync.Mutex
+		seenHash = make(map[string]time.Time)
+	)
+	cleanupTicker := time.NewTicker(10 * time.Minute)
+	defer cleanupTicker.Stop()
+	go func() {
+		for range cleanupTicker.C {
+			seenMu.Lock()
+			cutoff := time.Now().Add(-15 * time.Minute)
+			for h, t := range seenHash {
+				if t.Before(cutoff) {
+					delete(seenHash, h)
+				}
+			}
+			seenMu.Unlock()
+		}
+	}()
 
 	log.Printf("ML service consuming topic=%s brokers=%s", topic, kbrokers)
 	for {
-		m, err := reader.ReadMessage(ctx)
-		if err != nil { log.Fatalf("kafka read: %v", err) }
+		select {
+		case <-ctx.Done():
+			log.Println("ml service: shutting down consumer loop")
+			return
+		default:
+			m, err := reader.ReadMessage(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("kafka read: %v", err)
+				continue
+			}
 
-		var event Event
-		if err := json.Unmarshal(m.Value, &event); err != nil {
-			log.Printf("unmarshal event: %v", err)
-			continue
-		}
+			// Idempotency check by message hash
+			h := sha256.Sum256(m.Value)
+			hs := hex.EncodeToString(h[:])
+			seenMu.Lock()
+			if _, exists := seenHash[hs]; exists {
+				seenMu.Unlock()
+				continue
+			}
+			seenHash[hs] = time.Now()
+			seenMu.Unlock()
 
-		// Extract features
-		features := extractFeatures(event)
+			var event Event
+			if err := json.Unmarshal(m.Value, &event); err != nil {
+				log.Printf("unmarshal event: %v", err)
+				publishDLQ(ctx, dlqWriter, m.Value, "unmarshal_error")
+				continue
+			}
 
-		// Make prediction
-		prediction := makePrediction(model, features)
+			// Extract features
+			features := extractFeatures(event)
 
-		// Send prediction
-		predData, _ := json.Marshal(prediction)
-		if err := writer.WriteMessages(ctx, kafka.Message{Value: predData}); err != nil {
-			log.Printf("write ML prediction: %v", err)
-		} else {
-			log.Printf("ML PREDICTION: %s - %s (confidence: %.2f)", features.EventID, prediction.Prediction, prediction.Confidence)
+			// Make prediction (retry)
+			var prediction MLPrediction
+			retryWithBackoff(ctx, 3, 300*time.Millisecond, func() error {
+				prediction = makePrediction(model, features)
+				return nil
+			})
+
+			// Send prediction (retry else DLQ)
+			predData, _ := json.Marshal(prediction)
+			if err := retryWithBackoff(ctx, 3, 300*time.Millisecond, func() error { return writer.WriteMessages(ctx, kafka.Message{Value: predData}) }); err != nil {
+				publishDLQ(ctx, dlqWriter, predData, "prediction_publish_failed")
+			}
 		}
 	}
+}
+
+func startHTTPServer(addr string) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	server := &http.Server{Addr: addr, Handler: mux}
+	log.Printf("ML service HTTP listening on %s", addr)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("ml http server: %v", err)
+		}
+	}()
+	return server
 }
 
 func createMLTables(conn ch.Conn, ctx context.Context) {
@@ -143,7 +257,7 @@ func createMLTables(conn ch.Conn, ctx context.Context) {
   risk_score Float64,
   created_at DateTime DEFAULT now()
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -158,7 +272,7 @@ func createMLTables(conn ch.Conn, ctx context.Context) {
   timestamp DateTime,
   model_version String
 ) ENGINE = MergeTree ORDER BY timestamp`
-	
+
 	if err := conn.Exec(ctx, ddl2); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -173,7 +287,7 @@ func createMLTables(conn ch.Conn, ctx context.Context) {
   model_data String,
   created_at DateTime DEFAULT now()
 ) ENGINE = MergeTree ORDER BY version`
-	
+
 	if err := conn.Exec(ctx, ddl3); err != nil {
 		log.Fatalf("clickhouse ddl: %v", err)
 	}
@@ -325,4 +439,35 @@ func trainModel(conn ch.Conn, ctx context.Context) *MLModel {
 		LastTrained: time.Now(),
 		Features:    []string{"entropy", "hour_of_day", "file_size", "process_name"},
 	}
+}
+
+// retryWithBackoff executes fn up to attempts with exponential backoff starting at base.
+func retryWithBackoff(ctx context.Context, attempts int, base time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		timer := time.NewTimer(time.Duration(1<<i) * base)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func publishDLQ(ctx context.Context, w *kafka.Writer, payload []byte, reason string) {
+	msg := map[string]interface{}{
+		"reason":    reason,
+		"timestamp": time.Now().Format(time.RFC3339),
+		"payload":   string(payload),
+	}
+	data, _ := json.Marshal(msg)
+	_ = w.WriteMessages(ctx, kafka.Message{Value: data})
 }

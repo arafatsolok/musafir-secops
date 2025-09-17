@@ -30,19 +30,32 @@ interface ServiceStatus {
   category: 'monitoring' | 'database' | 'management' | 'storage'
 }
 
+interface GatewayMetrics {
+  request_count: number
+  error_count: number
+  avg_response_time: number
+  active_connections: number
+  last_updated: string | Date
+}
+
 const CentralPortal: React.FC = () => {
   const [services, setServices] = useState<ServiceStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [liveMetrics, setLiveMetrics] = useState<GatewayMetrics | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
 
   useEffect(() => {
     initializeServices()
     checkServiceStatus()
+    connectWebSocket()
     
     // Check status every 30 seconds
     const interval = setInterval(checkServiceStatus, 30000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
   const initializeServices = () => {
@@ -109,6 +122,25 @@ const CentralPortal: React.FC = () => {
       }
     ]
     setServices(serviceList)
+  }
+
+  const connectWebSocket = () => {
+    try {
+      const ws = new WebSocket('ws://localhost:8080/ws')
+      ws.onopen = () => setWsConnected(true)
+      ws.onclose = () => setWsConnected(false)
+      ws.onerror = () => setWsConnected(false)
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data)
+          if (msg?.Type === 'metrics' || msg?.type === 'metrics') {
+            setLiveMetrics(msg.Data || msg.data)
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      setWsConnected(false)
+    }
   }
 
   const checkServiceStatus = async () => {
@@ -189,7 +221,21 @@ const CentralPortal: React.FC = () => {
                 <p className="text-sm text-gray-600">Unified access to all platform services</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-6">
+              {/* Live metrics pill */}
+              <div className="hidden md:flex items-center space-x-3">
+                <div className={`w-2.5 h-2.5 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                <div className="text-xs text-gray-600">
+                  WS {wsConnected ? 'connected' : 'disconnected'}
+                  {liveMetrics && (
+                    <span className="ml-2">
+                      • req: {liveMetrics.request_count || 0}
+                      • err: {liveMetrics.error_count || 0}
+                      • rt: {(liveMetrics.avg_response_time || 0).toFixed ? (liveMetrics.avg_response_time as number).toFixed(2) : liveMetrics.avg_response_time}s
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="text-right">
                 <div className="text-sm text-gray-600">System Status</div>
                 <div className="flex items-center space-x-2">

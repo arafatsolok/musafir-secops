@@ -1,17 +1,28 @@
 package main
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	mrand "math/rand"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
 )
 
@@ -23,6 +34,8 @@ type AdvancedGateway struct {
 	metrics         *GatewayMetrics
 	wsUpgrader      websocket.Upgrader
 	services        map[string]*ServiceConfig
+	wsMu            sync.Mutex
+	wsClients       map[*websocket.Conn]struct{}
 }
 type ServiceConfig struct {
 	Name    string `json:"name"`
@@ -45,6 +58,7 @@ type AuthService struct {
 	JWTSecret     string
 	TokenExpiry   time.Duration
 	RefreshExpiry time.Duration
+	HMACSecret    string
 }
 
 type GatewayMetrics struct {
@@ -74,14 +88,21 @@ type WebSocketMessage struct {
 	Timestamp time.Time   `json:"timestamp"`
 }
 
+const correlationHeader = "X-Correlation-Id"
+const traceParentHeader = "traceparent"
+const traceStateHeader = "tracestate"
+
+type ctxKey string
+
+var correlationKey ctxKey = "correlation-id"
+
 func NewAdvancedGateway() *AdvancedGateway {
 	router := mux.NewRouter()
 
 	// Initialize rate limiters for different endpoints
 	rateLimiters := make(map[string]*rate.Limiter)
-	rateLimiters["/api/events"] = rate.NewLimiter(rate.Limit(100), 1000) // 100 req/s, burst 1000
-	rateLimiters["/api/search"] = rate.NewLimiter(rate.Limit(50), 500)   // 50 req/s, burst 500
-	rateLimiters["/api/admin"] = rate.NewLimiter(rate.Limit(10), 100)    // 10 req/s, burst 100
+	rateLimiters["/api/"] = rate.NewLimiter(rate.Limit(100), 1000) // 100 req/s, burst 1000
+	rateLimiters["/v1/events"] = rate.NewLimiter(rate.Limit(200), 2000)
 
 	// Initialize circuit breakers for services
 	circuitBreakers := make(map[string]*CircuitBreaker)
@@ -94,10 +115,20 @@ func NewAdvancedGateway() *AdvancedGateway {
 		}
 	}
 
+	jwtSecret := os.Getenv("GATEWAY_JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "your-secret-key"
+	}
+	hmacSecret := os.Getenv("GATEWAY_HMAC_SECRET")
+	if hmacSecret == "" {
+		hmacSecret = "change-me"
+	}
+
 	authService := &AuthService{
-		JWTSecret:     "your-secret-key",
+		JWTSecret:     jwtSecret,
 		TokenExpiry:   15 * time.Minute,
 		RefreshExpiry: 7 * 24 * time.Hour,
+		HMACSecret:    hmacSecret,
 	}
 
 	metrics := &GatewayMetrics{
@@ -118,6 +149,7 @@ func NewAdvancedGateway() *AdvancedGateway {
 		metrics:         metrics,
 		wsUpgrader:      wsUpgrader,
 		services:        make(map[string]*ServiceConfig),
+		wsClients:       make(map[*websocket.Conn]struct{}),
 	}
 }
 
@@ -348,6 +380,9 @@ func (g *AdvancedGateway) setupMiddleware() {
 	// CORS middleware
 	g.router.Use(g.corsMiddleware)
 
+	// Correlation ID middleware
+	g.router.Use(g.correlationIDMiddleware)
+
 	// Logging middleware
 	g.router.Use(g.loggingMiddleware)
 
@@ -364,6 +399,19 @@ func (g *AdvancedGateway) setupMiddleware() {
 	g.router.Use(g.circuitBreakerMiddleware)
 }
 
+func (g *AdvancedGateway) correlationIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cid := r.Header.Get(correlationHeader)
+		if cid == "" {
+			cid = generateCorrelationID()
+		}
+		w.Header().Set(correlationHeader, cid)
+		// Attach to context
+		r = r.WithContext(withCorrelationID(r.Context(), cid))
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (g *AdvancedGateway) setupRoutes() {
 	// Health check endpoint
 	g.router.HandleFunc("/health", g.healthHandler).Methods("GET")
@@ -373,6 +421,9 @@ func (g *AdvancedGateway) setupRoutes() {
 
 	// WebSocket endpoint for real-time updates
 	g.router.HandleFunc("/ws", g.websocketHandler)
+
+	// Ingest v1 events with HMAC validation
+	g.router.HandleFunc("/v1/events", g.eventsIngestV1Handler).Methods("POST")
 
 	// API routes
 	api := g.router.PathPrefix("/api").Subrouter()
@@ -422,14 +473,24 @@ func (g *AdvancedGateway) loggingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(wrapped, r)
 
 		duration := time.Since(start)
-		log.Printf("%s %s %d %v", r.Method, r.URL.Path, wrapped.statusCode, duration)
+		cid := getCorrelationID(r.Context())
+		entry := map[string]interface{}{
+			"ts":             time.Now().Format(time.RFC3339),
+			"method":         r.Method,
+			"path":           r.URL.Path,
+			"status":         wrapped.statusCode,
+			"duration_ms":    duration.Milliseconds(),
+			"correlation_id": cid,
+		}
+		b, _ := json.Marshal(entry)
+		log.Printf(string(b))
 	})
 }
 
 func (g *AdvancedGateway) rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Find appropriate rate limiter
-		limiter := g.rateLimiters["/api/events"] // Default
+		limiter := g.rateLimiters["/api/"] // Default
 		for path, l := range g.rateLimiters {
 			if strings.HasPrefix(r.URL.Path, path) {
 				limiter = l
@@ -437,7 +498,7 @@ func (g *AdvancedGateway) rateLimitMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if !limiter.Allow() {
+		if limiter != nil && !limiter.Allow() {
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
@@ -448,23 +509,113 @@ func (g *AdvancedGateway) rateLimitMiddleware(next http.Handler) http.Handler {
 
 func (g *AdvancedGateway) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health and metrics endpoints
-		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
+		// Skip auth for health, metrics, websocket, and v1 ingest
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" || r.URL.Path == "/ws" || r.URL.Path == "/v1/events" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Check for API key or JWT token
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			// For now, allow requests without auth (development mode)
-			next.ServeHTTP(w, r)
-			return
+		// Enforce JWT only for /api/*
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+				http.Error(w, "missing bearer token", http.StatusUnauthorized)
+				return
+			}
+			tokenStr := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
+			if !g.validateJWT(tokenStr) {
+				http.Error(w, "invalid token", http.StatusUnauthorized)
+				return
+			}
 		}
 
-		// TODO: Implement proper JWT validation
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (g *AdvancedGateway) validateJWT(tokenStr string) bool {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(g.authService.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return false
+	}
+	return true
+}
+
+// HMAC validation for agent events on /v1/events
+func (g *AdvancedGateway) eventsIngestV1Handler(w http.ResponseWriter, r *http.Request) {
+	// Read original body for HMAC verification and forwarding
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "unable to read body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	ts := r.Header.Get("X-Timestamp")
+	sig := r.Header.Get("X-Signature")
+	if ts == "" || sig == "" {
+		http.Error(w, "missing signature headers", http.StatusUnauthorized)
+		return
+	}
+
+	if !g.validateHMAC(ts, bodyBytes, sig) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	// Forward to ingest service
+	serviceConfig := g.services["ingest"]
+	if serviceConfig == nil {
+		http.Error(w, "Ingest service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Create a new request with the original body bytes
+	req, err := http.NewRequest("POST", serviceConfig.URL+"/events", io.NopCloser(strings.NewReader(string(bodyBytes))))
+	if err != nil {
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+	for k, vals := range r.Header {
+		for _, v := range vals {
+			req.Header.Add(k, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Error forwarding request", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+
+	// Broadcast notification to WebSocket clients
+	g.broadcast(WebSocketMessage{Type: "event", Data: map[string]interface{}{"status": resp.StatusCode, "ts": time.Now()}, Timestamp: time.Now()})
+}
+
+func (g *AdvancedGateway) validateHMAC(ts string, body []byte, providedSig string) bool {
+	mac := hmac.New(sha256.New, []byte(g.authService.HMACSecret))
+	mac.Write([]byte(ts))
+	mac.Write(body)
+	computed := hex.EncodeToString(mac.Sum(nil))
+	provided := strings.ToLower(strings.TrimSpace(providedSig))
+	if strings.HasPrefix(provided, "sha256=") {
+		provided = strings.TrimPrefix(provided, "sha256=")
+	}
+	return hmac.Equal([]byte(computed), []byte(provided))
 }
 
 func (g *AdvancedGateway) metricsMiddleware(next http.Handler) http.Handler {
@@ -556,7 +707,16 @@ func (g *AdvancedGateway) websocketHandler(w http.ResponseWriter, r *http.Reques
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+
+	g.wsMu.Lock()
+	g.wsClients[conn] = struct{}{}
+	g.wsMu.Unlock()
+	defer func() {
+		g.wsMu.Lock()
+		delete(g.wsClients, conn)
+		g.wsMu.Unlock()
+		conn.Close()
+	}()
 
 	g.metrics.ActiveConnections++
 
@@ -578,6 +738,14 @@ func (g *AdvancedGateway) websocketHandler(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		}
+	}
+}
+
+func (g *AdvancedGateway) broadcast(message WebSocketMessage) {
+	g.wsMu.Lock()
+	defer g.wsMu.Unlock()
+	for c := range g.wsClients {
+		_ = c.WriteJSON(message)
 	}
 }
 
@@ -700,6 +868,18 @@ func (g *AdvancedGateway) proxyRequest(w http.ResponseWriter, r *http.Request, t
 			req.Header.Add(key, value)
 		}
 	}
+	// Ensure correlation header is forwarded
+	cid := getCorrelationID(r.Context())
+	if cid != "" {
+		req.Header.Set(correlationHeader, cid)
+	}
+	// Ensure trace headers
+	if req.Header.Get(traceParentHeader) == "" {
+		req.Header.Set(traceParentHeader, generateTraceParent())
+	}
+	if req.Header.Get(traceStateHeader) == "" {
+		// optional; leave empty or set tenant
+	}
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -722,6 +902,13 @@ func (g *AdvancedGateway) proxyRequest(w http.ResponseWriter, r *http.Request, t
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}
+	}
+	// Include correlation and trace on response
+	if cid != "" {
+		w.Header().Set(correlationHeader, cid)
+	}
+	if tp := req.Header.Get(traceParentHeader); tp != "" {
+		w.Header().Set(traceParentHeader, tp)
 	}
 
 	// Set status code
@@ -814,7 +1001,41 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Correlation ID helpers
+
+func withCorrelationID(ctx context.Context, cid string) context.Context {
+	return context.WithValue(ctx, correlationKey, cid)
+}
+
+func getCorrelationID(ctx context.Context) string {
+	if v := ctx.Value(correlationKey); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// fallback simple generator
+func generateCorrelationID() string {
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), mrand.Int63())
+}
+
+func generateTraceParent() string {
+	// version 00, 16-byte trace id, 8-byte span id, flags 01
+	traceID := make([]byte, 16)
+	spanID := make([]byte, 8)
+	if _, err := rand.Read(traceID); err != nil {
+		mrand.Read(traceID)
+	}
+	if _, err := rand.Read(spanID); err != nil {
+		mrand.Read(spanID)
+	}
+	return fmt.Sprintf("00-%s-%s-01", hex.EncodeToString(traceID), hex.EncodeToString(spanID))
+}
+
 func main() {
+	_ = godotenv.Load()
 	gateway := NewAdvancedGateway()
 	gateway.Initialize()
 	gateway.Start("8080")

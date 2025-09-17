@@ -39,7 +39,9 @@ function App() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await fetch('/api/events')
+        const token = localStorage.getItem('musafir_jwt') || ''
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+        const response = await fetch('/api/events', { headers })
         if (!response.ok) throw new Error('Failed to fetch events')
         const data = await response.json()
         setEvents(data)

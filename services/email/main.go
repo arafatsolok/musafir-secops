@@ -2,13 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -97,53 +105,167 @@ func main() {
 		chDsn = "tcp://localhost:9000?database=default"
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle OS signals for graceful shutdown
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-shutdownCh
+		log.Println("email service: shutdown signal received")
+		cancel()
+	}()
+
 	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
 	if err != nil {
 		log.Fatalf("clickhouse connect: %v", err)
 	}
 	defer conn.Close()
 
-	// Ensure email tables exist
-	createEmailTables(conn, ctx)
+	// Ensure email tables exist with retry
+	retryWithBackoff(ctx, 3, 2*time.Second, func() error {
+		createEmailTables(conn, ctx)
+		return nil
+	})
 
-	// Event reader
+	// Start HTTP health/metrics server
+	httpServer := startHTTPServer(":8097")
+	defer func() {
+		ctxShutdown, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		_ = httpServer.Shutdown(ctxShutdown)
+	}()
+
+	// Kafka dialer with timeouts
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+		Resolver:  &net.Resolver{},
+	}
+
+	// Event reader with tuned settings
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  strings.Split(kbrokers, ","),
-		Topic:    "musafir.events",
-		GroupID:  group,
-		MinBytes: 1, MaxBytes: 10e6,
+		Brokers:         strings.Split(kbrokers, ","),
+		Topic:           "musafir.events",
+		GroupID:         group,
+		Dialer:          dialer,
+		MinBytes:        1,
+		MaxBytes:        10e6,
+		MaxWait:         500 * time.Millisecond,
+		ReadLagInterval: 5 * time.Second,
 	})
 	defer reader.Close()
 
-	// Alert writer
+	// Alert writer with RequiredAcks and Balancer
 	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers: strings.Split(kbrokers, ","),
-		Topic:   "musafir.email_alerts",
+		Brokers:      strings.Split(kbrokers, ","),
+		Topic:        "musafir.email_alerts",
+		Dialer:       dialer,
+		RequiredAcks: int(kafka.RequireAll),
+		Balancer:     &kafka.LeastBytes{},
+		Async:        false,
+		BatchTimeout: 200 * time.Millisecond,
 	})
+	defer writer.Close()
+
+	// DLQ writer
+	dlqWriter := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:      strings.Split(kbrokers, ","),
+		Topic:        "musafir.dlq.email",
+		Dialer:       dialer,
+		RequiredAcks: int(kafka.RequireAll),
+		Balancer:     &kafka.Hash{},
+	})
+	defer dlqWriter.Close()
 
 	// Initialize email configurations
 	configs := initializeEmailConfigs()
 
+	// Idempotency cache for processed messages
+	var (
+		seenMu   sync.Mutex
+		seenHash = make(map[string]time.Time)
+	)
+	cleanupTicker := time.NewTicker(10 * time.Minute)
+	defer cleanupTicker.Stop()
+	go func() {
+		for range cleanupTicker.C {
+			seenMu.Lock()
+			cutoff := time.Now().Add(-15 * time.Minute)
+			for h, t := range seenHash {
+				if t.Before(cutoff) {
+					delete(seenHash, h)
+				}
+			}
+			seenMu.Unlock()
+		}
+	}()
+
 	log.Printf("Email service consuming events brokers=%s", kbrokers)
 	for {
-		m, err := reader.ReadMessage(ctx)
-		if err != nil {
-			log.Fatalf("kafka read: %v", err)
+		select {
+		case <-ctx.Done():
+			log.Println("email service: shutting down consumer loop")
+			return
+		default:
+			m, err := reader.ReadMessage(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("kafka read: %v", err)
+				continue
+			}
+
+			// Idempotency check by message hash
+			h := sha256.Sum256(m.Value)
+			hs := hex.EncodeToString(h[:])
+			seenMu.Lock()
+			if _, exists := seenHash[hs]; exists {
+				seenMu.Unlock()
+				continue
+			}
+			seenHash[hs] = time.Now()
+			seenMu.Unlock()
+
+			var event map[string]interface{}
+			if err := json.Unmarshal(m.Value, &event); err != nil {
+				log.Printf("unmarshal event: %v", err)
+				publishDLQ(ctx, dlqWriter, m.Value, "unmarshal_error")
+				continue
+			}
+
+			// Process email event with retry; on persistent failure send to DLQ
+			procErr := retryWithBackoff(ctx, 3, 300*time.Millisecond, func() error {
+				processEmailEvent(event, writer, ctx)
+				return nil
+			})
+			if procErr != nil {
+				publishDLQ(ctx, dlqWriter, m.Value, "processing_failed")
+			}
+
+			// Monitor email sources (no DLQ)
+			go monitorEmailSources(configs, writer, ctx)
 		}
-
-		var event map[string]interface{}
-		if err := json.Unmarshal(m.Value, &event); err != nil {
-			log.Printf("unmarshal event: %v", err)
-			continue
-		}
-
-		// Process email event
-		processEmailEvent(event, writer, ctx)
-
-		// Monitor email sources
-		go monitorEmailSources(configs, writer, ctx)
 	}
+}
+
+func startHTTPServer(addr string) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	server := &http.Server{Addr: addr, Handler: mux}
+	log.Printf("Email service HTTP listening on %s", addr)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("email http server: %v", err)
+		}
+	}()
+	return server
 }
 
 func createEmailTables(conn ch.Conn, ctx context.Context) {
@@ -590,4 +712,36 @@ func getInt64(data map[string]interface{}, key string) int64 {
 		return int64(val)
 	}
 	return 0
+}
+
+// retryWithBackoff executes fn up to attempts with exponential backoff starting at base.
+func retryWithBackoff(ctx context.Context, attempts int, base time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		sleep := time.Duration(1<<i) * base
+		timer := time.NewTimer(sleep)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func publishDLQ(ctx context.Context, w *kafka.Writer, payload []byte, reason string) {
+	msg := map[string]interface{}{
+		"reason":    reason,
+		"timestamp": time.Now().Format(time.RFC3339),
+		"payload":   string(payload),
+	}
+	data, _ := json.Marshal(msg)
+	_ = w.WriteMessages(ctx, kafka.Message{Value: data})
 }

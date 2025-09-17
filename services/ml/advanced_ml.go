@@ -1,22 +1,16 @@
+//go:build ml_advanced
+
 package main
 
 import (
 	"context"
-	"encoding/json"
-	"log"
-	"math"
-	"math/rand"
-	"os"
-	"strings"
-	"time"
-	"sync"
-	"sort"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-
-	ch "github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/segmentio/kafka-go"
+	"log"
+	"math"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Advanced ML structures for deep learning
@@ -37,13 +31,13 @@ type DeepLearningModel struct {
 }
 
 type SequenceData struct {
-	EventID     string      `json:"event_id"`
-	UserID      string      `json:"user_id"`
-	AssetID     string      `json:"asset_id"`
-	Sequence    []float64   `json:"sequence"`
-	Timestamps  []time.Time `json:"timestamps"`
-	Labels      []string    `json:"labels"`
-	Length      int         `json:"length"`
+	EventID    string      `json:"event_id"`
+	UserID     string      `json:"user_id"`
+	AssetID    string      `json:"asset_id"`
+	Sequence   []float64   `json:"sequence"`
+	Timestamps []time.Time `json:"timestamps"`
+	Labels     []string    `json:"labels"`
+	Length     int         `json:"length"`
 }
 
 type ThreatPrediction struct {
@@ -62,30 +56,30 @@ type ThreatPrediction struct {
 }
 
 type BehavioralProfile struct {
-	UserID          string                 `json:"user_id"`
-	AssetID         string                 `json:"asset_id"`
-	Baseline        map[string]float64     `json:"baseline"`
-	AnomalyScore    float64                `json:"anomaly_score"`
-	RiskLevel       string                 `json:"risk_level"`
-	LastUpdated     time.Time              `json:"last_updated"`
-	BehaviorPattern []BehaviorPattern      `json:"behavior_patterns"`
-	DeviationScore  float64                `json:"deviation_score"`
+	UserID          string             `json:"user_id"`
+	AssetID         string             `json:"asset_id"`
+	Baseline        map[string]float64 `json:"baseline"`
+	AnomalyScore    float64            `json:"anomaly_score"`
+	RiskLevel       string             `json:"risk_level"`
+	LastUpdated     time.Time          `json:"last_updated"`
+	BehaviorPattern []BehaviorPattern  `json:"behavior_patterns"`
+	DeviationScore  float64            `json:"deviation_score"`
 }
 
 type BehaviorPattern struct {
-	Pattern     string    `json:"pattern"`
-	Frequency   float64   `json:"frequency"`
-	Confidence  float64   `json:"confidence"`
-	LastSeen    time.Time `json:"last_seen"`
-	Anomaly     bool      `json:"is_anomaly"`
+	Pattern    string    `json:"pattern"`
+	Frequency  float64   `json:"frequency"`
+	Confidence float64   `json:"confidence"`
+	LastSeen   time.Time `json:"last_seen"`
+	Anomaly    bool      `json:"is_anomaly"`
 }
 
 type EnsembleModel struct {
-	Models        []DeepLearningModel `json:"models"`
-	Weights       []float64           `json:"weights"`
-	VotingMethod  string              `json:"voting_method"` // hard, soft, weighted
-	Accuracy      float64             `json:"accuracy"`
-	LastUpdated   time.Time           `json:"last_updated"`
+	Models       []DeepLearningModel `json:"models"`
+	Weights      []float64           `json:"weights"`
+	VotingMethod string              `json:"voting_method"` // hard, soft, weighted
+	Accuracy     float64             `json:"accuracy"`
+	LastUpdated  time.Time           `json:"last_updated"`
 }
 
 type MLInsight struct {
@@ -128,13 +122,13 @@ func (ml *AdvancedMLEngine) InitializeModels() {
 
 	// LSTM Model for sequence analysis
 	lstmModel := &DeepLearningModel{
-		ID:       generateModelID(),
-		Version:  "1.0.0",
-		Type:     "lstm",
-		Accuracy: 0.92,
-		Precision: 0.89,
-		Recall:   0.91,
-		F1Score:  0.90,
+		ID:          generateModelID(),
+		Version:     "1.0.0",
+		Type:        "lstm",
+		Accuracy:    0.92,
+		Precision:   0.89,
+		Recall:      0.91,
+		F1Score:     0.90,
 		LastTrained: time.Now(),
 		Architecture: map[string]interface{}{
 			"layers": []map[string]interface{}{
@@ -148,22 +142,22 @@ func (ml *AdvancedMLEngine) InitializeModels() {
 		},
 		Features: []string{"entropy", "file_size", "hour_of_day", "process_name", "command_length"},
 		Hyperparameters: map[string]interface{}{
-			"learning_rate": 0.001,
-			"batch_size":    32,
-			"epochs":        100,
+			"learning_rate":   0.001,
+			"batch_size":      32,
+			"epochs":          100,
 			"sequence_length": 10,
 		},
 	}
 
 	// Transformer Model for attention-based analysis
 	transformerModel := &DeepLearningModel{
-		ID:       generateModelID(),
-		Version:  "1.0.0",
-		Type:     "transformer",
-		Accuracy: 0.94,
-		Precision: 0.92,
-		Recall:   0.93,
-		F1Score:  0.925,
+		ID:          generateModelID(),
+		Version:     "1.0.0",
+		Type:        "transformer",
+		Accuracy:    0.94,
+		Precision:   0.92,
+		Recall:      0.93,
+		F1Score:     0.925,
 		LastTrained: time.Now(),
 		Architecture: map[string]interface{}{
 			"layers": []map[string]interface{}{
@@ -186,13 +180,13 @@ func (ml *AdvancedMLEngine) InitializeModels() {
 
 	// CNN Model for pattern recognition
 	cnnModel := &DeepLearningModel{
-		ID:       generateModelID(),
-		Version:  "1.0.0",
-		Type:     "cnn",
-		Accuracy: 0.88,
-		Precision: 0.85,
-		Recall:   0.87,
-		F1Score:  0.86,
+		ID:          generateModelID(),
+		Version:     "1.0.0",
+		Type:        "cnn",
+		Accuracy:    0.88,
+		Precision:   0.85,
+		Recall:      0.87,
+		F1Score:     0.86,
 		LastTrained: time.Now(),
 		Architecture: map[string]interface{}{
 			"layers": []map[string]interface{}{
@@ -208,9 +202,9 @@ func (ml *AdvancedMLEngine) InitializeModels() {
 		},
 		Features: []string{"entropy_sequence", "file_size_sequence", "process_sequence"},
 		Hyperparameters: map[string]interface{}{
-			"learning_rate": 0.001,
-			"batch_size":    64,
-			"epochs":        80,
+			"learning_rate":   0.001,
+			"batch_size":      64,
+			"epochs":          80,
 			"sequence_length": 20,
 		},
 	}
@@ -351,7 +345,7 @@ func (ml *AdvancedMLEngine) PredictWithTransformer(features map[string]interface
 	}
 
 	anomalyScore := weightedSum / totalWeight
-	anomalyScore = math.Sigmoid(anomalyScore) // Sigmoid activation
+	anomalyScore = sigmoid(anomalyScore) // Sigmoid activation
 
 	if anomalyScore > 0.8 {
 		return "malicious", anomalyScore
@@ -371,7 +365,7 @@ func (ml *AdvancedMLEngine) PredictWithCNN(sequence []float64) (string, float64)
 
 	// Simulate convolution layers
 	conv1 := ml.convolve(sequence, []float64{0.1, 0.2, 0.1}) // Edge detection
-	conv2 := ml.convolve(conv1, []float64{0.2, 0.4, 0.2})   // Pattern detection
+	conv2 := ml.convolve(conv1, []float64{0.2, 0.4, 0.2})    // Pattern detection
 
 	// Max pooling
 	pooled := ml.maxPool(conv2, 2)
@@ -441,14 +435,14 @@ func (ml *AdvancedMLEngine) UpdateBehavioralProfile(userID, assetID string, feat
 
 	key := userID + "_" + assetID
 	profile, exists := ml.behaviorProfiles[key]
-	
+
 	if !exists {
 		profile = &BehavioralProfile{
-			UserID:       userID,
-			AssetID:      assetID,
-			Baseline:     make(map[string]float64),
-			LastUpdated:  time.Now(),
-			RiskLevel:    "low",
+			UserID:      userID,
+			AssetID:     assetID,
+			Baseline:    make(map[string]float64),
+			LastUpdated: time.Now(),
+			RiskLevel:   "low",
 		}
 		ml.behaviorProfiles[key] = profile
 	}
@@ -535,7 +529,7 @@ func (ml *AdvancedMLEngine) calculateAnomalyScore(features map[string]interface{
 	for key, value := range features {
 		if val, ok := value.(float64); ok {
 			if baselineVal, exists := baseline[key]; exists {
-				deviation := math.Abs(val - baselineVal) / (baselineVal + 1e-8)
+				deviation := math.Abs(val-baselineVal) / (baselineVal + 1e-8)
 				totalDeviation += deviation
 				featureCount++
 			}
@@ -572,7 +566,7 @@ func (ml *AdvancedMLEngine) calculateDeviation(features map[string]interface{}, 
 func (ml *AdvancedMLEngine) getSequenceFeatures(key string, features map[string]interface{}) []float64 {
 	// Get or create sequence for this user/asset
 	sequence := ml.sequenceCache[key]
-	
+
 	// Add current features to sequence
 	featureVector := make([]float64, 0)
 	for _, val := range features {
@@ -640,15 +634,15 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 		entropy := getFloat64FromInterface(features["entropy"])
 		fileSize := getFloat64FromInterface(features["file_size"])
 		processName := getStringFromInterface(features["process_name"])
-		
+
 		if entropy > 7.0 {
 			baseProb += 0.3
 		}
 		if fileSize > 1000000 { // Large files
 			baseProb += 0.2
 		}
-		if strings.Contains(strings.ToLower(processName), "wscript") || 
-		   strings.Contains(strings.ToLower(processName), "powershell") {
+		if strings.Contains(strings.ToLower(processName), "wscript") ||
+			strings.Contains(strings.ToLower(processName), "powershell") {
 			baseProb += 0.3
 		}
 
@@ -656,7 +650,7 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 		// Network activity + authentication + unusual processes
 		networkActivity := getFloat64FromInterface(features["network_activity"])
 		authAnomaly := getFloat64FromInterface(features["auth_anomaly"])
-		
+
 		if networkActivity > 0.5 {
 			baseProb += 0.3
 		}
@@ -669,7 +663,7 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 		fileSize := getFloat64FromInterface(features["file_size"])
 		hour := getFloat64FromInterface(features["hour_of_day"])
 		externalConn := getFloat64FromInterface(features["external_connection"])
-		
+
 		if fileSize > 10000000 { // Very large files
 			baseProb += 0.3
 		}
@@ -685,7 +679,7 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 		processElevation := getFloat64FromInterface(features["process_elevation"])
 		systemAccess := getFloat64FromInterface(features["system_access"])
 		command := getStringFromInterface(features["command"])
-		
+
 		if processElevation > 0.7 {
 			baseProb += 0.4
 		}
@@ -693,7 +687,7 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 			baseProb += 0.3
 		}
 		if strings.Contains(strings.ToLower(command), "runas") ||
-		   strings.Contains(strings.ToLower(command), "sudo") {
+			strings.Contains(strings.ToLower(command), "sudo") {
 			baseProb += 0.2
 		}
 	}
@@ -704,11 +698,11 @@ func (ml *AdvancedMLEngine) calculateThreatProbability(threatType string, featur
 func (ml *AdvancedMLEngine) calculateConfidence(features map[string]interface{}) float64 {
 	// Calculate confidence based on feature quality and completeness
 	confidence := 0.5
-	
+
 	// More features = higher confidence
 	featureCount := float64(len(features))
 	confidence += math.Min(featureCount/20.0, 0.3)
-	
+
 	// High-quality features = higher confidence
 	if features["entropy"] != nil {
 		confidence += 0.1
@@ -719,14 +713,14 @@ func (ml *AdvancedMLEngine) calculateConfidence(features map[string]interface{})
 	if features["command"] != nil {
 		confidence += 0.1
 	}
-	
+
 	return math.Min(confidence, 1.0)
 }
 
 func (ml *AdvancedMLEngine) estimateTimeToImpact(threatType string, probability float64) int {
 	// Estimate time to impact based on threat type and probability
 	baseTime := 24 // hours
-	
+
 	switch threatType {
 	case "ransomware":
 		baseTime = 2 // Very fast
@@ -737,7 +731,7 @@ func (ml *AdvancedMLEngine) estimateTimeToImpact(threatType string, probability 
 	case "privilege_escalation":
 		baseTime = 4 // Fast
 	}
-	
+
 	// Higher probability = shorter time to impact
 	timeMultiplier := 1.0 - (probability * 0.5)
 	return int(float64(baseTime) * timeMultiplier)
@@ -857,14 +851,14 @@ func calculateSequenceEntropy(sequence []float64) float64 {
 	if len(sequence) == 0 {
 		return 0.0
 	}
-	
+
 	// Calculate entropy of sequence
 	valueCounts := make(map[float64]int)
 	for _, val := range sequence {
 		rounded := math.Round(val*100) / 100 // Round to 2 decimal places
 		valueCounts[rounded]++
 	}
-	
+
 	entropy := 0.0
 	length := float64(len(sequence))
 	for _, count := range valueCounts {
@@ -873,7 +867,7 @@ func calculateSequenceEntropy(sequence []float64) float64 {
 			entropy -= p * math.Log2(p)
 		}
 	}
-	
+
 	return entropy
 }
 
@@ -881,24 +875,24 @@ func calculateSequenceVariance(sequence []float64) float64 {
 	if len(sequence) == 0 {
 		return 0.0
 	}
-	
+
 	// Calculate mean
 	sum := 0.0
 	for _, val := range sequence {
 		sum += val
 	}
 	mean := sum / float64(len(sequence))
-	
+
 	// Calculate variance
 	variance := 0.0
 	for _, val := range sequence {
 		variance += (val - mean) * (val - mean)
 	}
 	variance /= float64(len(sequence))
-	
+
 	return variance
 }
 
-func math.Sigmoid(x float64) float64 {
+func sigmoid(x float64) float64 {
 	return 1.0 / (1.0 + math.Exp(-x))
 }

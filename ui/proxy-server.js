@@ -53,45 +53,46 @@ app.get('/api/service-status/:service', async (req, res) => {
   }
 })
 
-// Proxy for all services
-app.use('/api/grafana', createProxyMiddleware({
-  target: 'http://localhost:3001',
+// Gateway API proxy
+const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8000'
+app.use('/api', createProxyMiddleware({
+  target: gatewayUrl,
   changeOrigin: true,
-  pathRewrite: { '^/api/grafana': '' }
+  pathRewrite: {
+    '^/api': '/api/v1' // Rewrite path to match gateway API version
+  },
+  onProxyReq: (proxyReq, req, res) => {
+    // Add auth token if available
+    if (req.headers.authorization) {
+      proxyReq.setHeader('Authorization', req.headers.authorization)
+    }
+    
+    // Log request for debugging
+    console.log(`[Proxy] ${req.method} ${req.path} -> ${gatewayUrl}/api/v1${req.path.replace(/^\/api/, '')}`)
+  },
+  onError: (err, req, res) => {
+    console.error(`[Proxy Error] ${err.message}`)
+    res.status(500).json({ 
+      error: 'Gateway service unavailable',
+      message: 'Unable to connect to backend services',
+      timestamp: new Date().toISOString()
+    })
+  }
 }))
 
-app.use('/api/prometheus', createProxyMiddleware({
-  target: 'http://localhost:9090',
+// WebSocket proxy for real-time updates
+const wsProxy = createProxyMiddleware('/ws', {
+  target: gatewayUrl,
+  ws: true,
   changeOrigin: true,
-  pathRewrite: { '^/api/prometheus': '' }
-}))
+  onError: (err, req, res) => {
+    console.error(`[WebSocket Error] ${err.message}`)
+  }
+})
+app.use(wsProxy)
 
-app.use('/api/jaeger', createProxyMiddleware({
-  target: 'http://localhost:16686',
-  changeOrigin: true,
-  pathRewrite: { '^/api/jaeger': '' }
-}))
-
-app.use('/api/neo4j', createProxyMiddleware({
-  target: 'http://localhost:7474',
-  changeOrigin: true,
-  pathRewrite: { '^/api/neo4j': '' }
-}))
-
-app.use('/api/rabbitmq', createProxyMiddleware({
-  target: 'http://localhost:15672',
-  changeOrigin: true,
-  pathRewrite: { '^/api/rabbitmq': '' }
-}))
-
-app.use('/api/minio', createProxyMiddleware({
-  target: 'http://localhost:9002',
-  changeOrigin: true,
-  pathRewrite: { '^/api/minio': '' }
-}))
-
+// Start the server
 app.listen(PORT, () => {
-  console.log(`Proxy server running on port ${PORT}`)
-  console.log(`Health check: http://localhost:${PORT}/health`)
-  console.log(`Service status: http://localhost:${PORT}/api/service-status/{service}`)
+  console.log(`Proxy server running on http://localhost:${PORT}`)
+  console.log(`Proxying API requests to ${gatewayUrl}`)
 })

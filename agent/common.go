@@ -94,11 +94,23 @@ func postWithRetry(client *http.Client, url string, data []byte) error {
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
-		// Optional HMAC signing
-		if secret := strings.TrimSpace(os.Getenv("AGENT_HMAC_SECRET")); secret != "" {
-			sign := computeHMACSHA256Hex(data, []byte(secret))
-			req.Header.Set("X-Signature", sign)
+		
+		// Add timestamp for HMAC validation
+		ts := time.Now().UTC().Format(time.RFC3339)
+		req.Header.Set("X-Timestamp", ts)
+		
+		// HMAC signing with timestamp
+		secret := strings.TrimSpace(os.Getenv("AGENT_HMAC_SECRET"))
+		if secret == "" {
+			secret = "default-hmac-secret-for-demo" // Default for demo purposes
 		}
+		
+		// Create HMAC with timestamp + body
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte(ts))
+		mac.Write(data)
+		sign := hex.EncodeToString(mac.Sum(nil))
+		req.Header.Set("X-Signature", "sha256="+sign)
 
 		resp, err := client.Do(req)
 		if err != nil {

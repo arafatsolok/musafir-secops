@@ -41,6 +41,8 @@ type AdvancedGateway struct {
 	enrollTokens    map[string]time.Time
 	agentRecords    map[string]*AgentRecord
 	chConn          ch.Conn
+	mu              sync.RWMutex
+	storedEvents    []map[string]interface{}
 }
 type ServiceConfig struct {
 	Name    string `json:"name"`
@@ -136,11 +138,19 @@ func NewAdvancedGateway() *AdvancedGateway {
 
 	jwtSecret := os.Getenv("GATEWAY_JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "your-secret-key"
+		// Generate a secure random JWT secret if not provided
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			log.Fatalf("Failed to generate random JWT secret: %v", err)
+		}
+		jwtSecret = hex.EncodeToString(randomBytes)
+		log.Printf("WARNING: GATEWAY_JWT_SECRET not set. Generated random secret: %s", jwtSecret)
 	}
+	
 	hmacSecret := os.Getenv("GATEWAY_HMAC_SECRET")
 	if hmacSecret == "" {
-		hmacSecret = "change-me"
+		hmacSecret = "default-hmac-secret-for-demo" // Use same default as agent
+		log.Printf("WARNING: GATEWAY_HMAC_SECRET not set. Using default secret for demo")
 	}
 
 	authService := &AuthService{
@@ -171,10 +181,31 @@ func NewAdvancedGateway() *AdvancedGateway {
 		wsClients:       make(map[*websocket.Conn]struct{}),
 		enrollTokens:    make(map[string]time.Time),
 		agentRecords:    make(map[string]*AgentRecord),
+		storedEvents:    make([]map[string]interface{}, 0),
 	}
 }
 
 func (g *AdvancedGateway) Initialize() {
+	// Load environment variables
+	godotenv.Load()
+
+	// Initialize auth service with default secrets for demo
+	jwtSecret := os.Getenv("GATEWAY_JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = generateRandomHex(32)
+		log.Printf("WARNING: GATEWAY_JWT_SECRET not set. Generated random secret: %s", jwtSecret)
+	}
+
+	hmacSecret := os.Getenv("GATEWAY_HMAC_SECRET")
+	if hmacSecret == "" {
+		hmacSecret = "default-hmac-secret-for-demo" // Use same default as agent
+		log.Printf("WARNING: GATEWAY_HMAC_SECRET not set. Using default secret for demo")
+	}
+
+	// Update auth service with loaded secrets
+	g.authService.JWTSecret = jwtSecret
+	g.authService.HMACSecret = hmacSecret
+
 	// Load service configurations
 	g.loadServiceConfigs()
 
@@ -476,14 +507,28 @@ func (g *AdvancedGateway) setupRoutes() {
 	// API routes
 	api := g.router.PathPrefix("/api").Subrouter()
 
+	// Authentication endpoints
+	api.HandleFunc("/auth/login", g.loginHandler).Methods("POST")
+	
 	// Events endpoint
-	api.HandleFunc("/events", g.eventsHandler).Methods("POST")
+	api.HandleFunc("/events", g.eventsHandler).Methods("GET", "POST")
 
 	// Agent config polling (authenticated by per-agent HMAC headers)
 	api.HandleFunc("/agent/config", g.agentConfigHandler).Methods("GET")
 
 	// Search endpoint
 	api.HandleFunc("/search", g.searchHandler).Methods("GET", "POST")
+
+	// Missing endpoints for web UI
+	api.HandleFunc("/threats", g.threatsHandler).Methods("GET")
+	api.HandleFunc("/ml/insights", g.mlInsightsHandler).Methods("GET")
+	api.HandleFunc("/graph/network", g.networkGraphHandler).Methods("GET")
+	api.HandleFunc("/queries/saved", g.savedQueriesHandler).Methods("GET")
+	api.HandleFunc("/queries/history", g.queryHistoryHandler).Methods("GET")
+	api.HandleFunc("/queries/save", g.saveQueryHandler).Methods("POST")
+	api.HandleFunc("/query/execute", g.executeQueryHandler).Methods("POST")
+	api.HandleFunc("/health", g.healthStatusHandler).Methods("GET")
+	api.HandleFunc("/logs", g.logsHandler).Methods("GET")
 
 	// Admin endpoints
 	admin := api.PathPrefix("/admin").Subrouter()
@@ -561,8 +606,8 @@ func (g *AdvancedGateway) rateLimitMiddleware(next http.Handler) http.Handler {
 
 func (g *AdvancedGateway) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health, metrics, websocket, and v1 enroll/events HMAC
-		if r.URL.Path == "/health" || r.URL.Path == "/metrics" || r.URL.Path == "/ws" || r.URL.Path == "/v1/enroll" || r.URL.Path == "/v1/events" {
+		// Skip auth for health, metrics, websocket, login, and v1 enroll/events HMAC
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" || r.URL.Path == "/ws" || r.URL.Path == "/api/auth/login" || r.URL.Path == "/v1/enroll" || r.URL.Path == "/v1/events" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -603,7 +648,7 @@ func (g *AdvancedGateway) validateJWT(tokenStr string) bool {
 
 // HMAC validation for agent events on /v1/events
 func (g *AdvancedGateway) eventsIngestV1Handler(w http.ResponseWriter, r *http.Request) {
-	// Read original body for HMAC verification and forwarding
+	// Read original body for HMAC verification
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "unable to read body", http.StatusBadRequest)
@@ -623,42 +668,49 @@ func (g *AdvancedGateway) eventsIngestV1Handler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Forward to ingest service
-	serviceConfig := g.services["ingest"]
-	if serviceConfig == nil {
-		http.Error(w, "Ingest service not available", http.StatusServiceUnavailable)
+	// Process event directly (instead of forwarding to non-existent service)
+	var event map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &event); err != nil {
+		log.Printf("Failed to parse event JSON: %v", err)
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	// Create a new request with the original body bytes
-	req, err := http.NewRequest("POST", serviceConfig.URL+"/events", io.NopCloser(strings.NewReader(string(bodyBytes))))
-	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return
-	}
-	for k, vals := range r.Header {
-		for _, v := range vals {
-			req.Header.Add(k, v)
+	// Log the received event
+	log.Printf("Received event: %s", string(bodyBytes))
+
+	// Store in ClickHouse if connection is available
+	if g.chConn != nil {
+		// Insert into events table (simplified for demo)
+		ctx := context.Background()
+		err = g.chConn.Exec(ctx, `
+			INSERT INTO events (timestamp, tenant_id, event_data) 
+			VALUES (?, ?, ?)
+		`, time.Now(), event["tenant_id"], string(bodyBytes))
+		if err != nil {
+			log.Printf("Failed to insert event into ClickHouse: %v", err)
 		}
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, "Error forwarding request", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	for k, vals := range resp.Header {
-		for _, v := range vals {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"message": "Event received and processed",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
 
 	// Broadcast notification to WebSocket clients
-	g.broadcast(WebSocketMessage{Type: "event", Data: map[string]interface{}{"status": resp.StatusCode, "ts": time.Now()}, Timestamp: time.Now()})
+	g.broadcast(WebSocketMessage{
+		Type: "event", 
+		Data: map[string]interface{}{
+			"status": "received", 
+			"event": event,
+			"ts": time.Now(),
+		}, 
+		Timestamp: time.Now(),
+	})
 }
 
 func (g *AdvancedGateway) validateHMAC(ts string, body []byte, providedSig string) bool {
@@ -793,20 +845,107 @@ func (g *AdvancedGateway) websocketHandler(w http.ResponseWriter, r *http.Reques
 func (g *AdvancedGateway) broadcast(message WebSocketMessage) {
 	g.wsMu.Lock()
 	defer g.wsMu.Unlock()
-	for c := range g.wsClients {
-		_ = c.WriteJSON(message)
+
+	for client := range g.wsClients {
+		if err := client.WriteJSON(message); err != nil {
+			client.Close()
+			delete(g.wsClients, client)
+		}
 	}
 }
 
-func (g *AdvancedGateway) eventsHandler(w http.ResponseWriter, r *http.Request) {
-	// Forward to ingest service
-	serviceConfig := g.services["ingest"]
-	if serviceConfig == nil {
-		http.Error(w, "Ingest service not available", http.StatusServiceUnavailable)
+func (g *AdvancedGateway) loginHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	
+	// For demo purposes, accept any username/password
+	// In production, validate against a user database
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "username and password required", http.StatusBadRequest)
+		return
+	}
+	
+	// Generate JWT token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": req.Username,
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(g.authService.TokenExpiry).Unix(),
+	})
+	
+	tokenString, err := token.SignedString([]byte(g.authService.JWTSecret))
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": tokenString,
+	})
+}
 
-	g.proxyRequest(w, r, serviceConfig.URL+"/events")
+func (g *AdvancedGateway) broadcastEvent(event map[string]interface{}) {
+	message := WebSocketMessage{
+		Type:      "event",
+		Data:      event,
+		Timestamp: time.Now(),
+	}
+	g.broadcast(message)
+}
+
+func (g *AdvancedGateway) eventsHandler(w http.ResponseWriter, r *http.Request) {
+	// Handle both GET and POST requests for events
+	switch r.Method {
+	case "GET":
+		// Return stored events for the web UI
+		g.mu.RLock()
+		events := make([]map[string]interface{}, len(g.storedEvents))
+		copy(events, g.storedEvents)
+		g.mu.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(events)
+		
+	case "POST":
+		// Handle event submission (similar to eventsIngestV1Handler but for API)
+		var event map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Add timestamp if not present
+		if _, exists := event["ts"]; !exists {
+			event["ts"] = time.Now().UTC().Format(time.RFC3339)
+		}
+
+		// Store the event
+		g.mu.Lock()
+		g.storedEvents = append(g.storedEvents, event)
+		// Keep only last 1000 events
+		if len(g.storedEvents) > 1000 {
+			g.storedEvents = g.storedEvents[len(g.storedEvents)-1000:]
+		}
+		g.mu.Unlock()
+
+		// Broadcast to WebSocket clients
+		g.broadcastEvent(event)
+
+		log.Printf("API Event received and stored: %v", event)
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (g *AdvancedGateway) searchHandler(w http.ResponseWriter, r *http.Request) {
@@ -1187,6 +1326,237 @@ func (g *AdvancedGateway) discoverGatewayURL() string {
 		port = "8080"
 	}
 	return "http://" + "localhost:" + port
+}
+
+func (g *AdvancedGateway) threatsHandler(w http.ResponseWriter, r *http.Request) {
+	timeRange := r.URL.Query().Get("timeRange")
+	if timeRange == "" {
+		timeRange = "24h"
+	}
+
+	// Mock threat data for now - in production, this would query ClickHouse
+	threats := []map[string]interface{}{
+		{
+			"id":          "threat-001",
+			"type":        "malware",
+			"severity":    "high",
+			"description": "Suspicious executable detected",
+			"timestamp":   time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+			"asset":       "DESKTOP-ABC123",
+			"status":      "active",
+		},
+		{
+			"id":          "threat-002",
+			"type":        "network",
+			"severity":    "medium",
+			"description": "Unusual network traffic pattern",
+			"timestamp":   time.Now().Add(-4 * time.Hour).Format(time.RFC3339),
+			"asset":       "SERVER-XYZ789",
+			"status":      "investigating",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(threats)
+}
+
+func (g *AdvancedGateway) mlInsightsHandler(w http.ResponseWriter, r *http.Request) {
+	timeRange := r.URL.Query().Get("timeRange")
+	if timeRange == "" {
+		timeRange = "24h"
+	}
+
+	// Mock ML insights data
+	insights := []map[string]interface{}{
+		{
+			"id":         "insight-001",
+			"type":       "anomaly",
+			"confidence": 0.85,
+			"description": "Unusual login pattern detected for user john.doe",
+			"timestamp":  time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+			"category":   "behavioral",
+		},
+		{
+			"id":         "insight-002",
+			"type":       "prediction",
+			"confidence": 0.72,
+			"description": "Potential ransomware activity predicted",
+			"timestamp":  time.Now().Add(-3 * time.Hour).Format(time.RFC3339),
+			"category":   "threat_prediction",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(insights)
+}
+
+func (g *AdvancedGateway) networkGraphHandler(w http.ResponseWriter, r *http.Request) {
+	timeRange := r.URL.Query().Get("timeRange")
+	if timeRange == "" {
+		timeRange = "24h"
+	}
+
+	// Mock network graph data
+	graphData := map[string]interface{}{
+		"nodes": []map[string]interface{}{
+			{"id": "node-1", "type": "server", "label": "Web Server", "risk": "low"},
+			{"id": "node-2", "type": "database", "label": "DB Server", "risk": "medium"},
+			{"id": "node-3", "type": "workstation", "label": "Admin PC", "risk": "high"},
+		},
+		"edges": []map[string]interface{}{
+			{"source": "node-1", "target": "node-2", "type": "connection", "weight": 5},
+			{"source": "node-2", "target": "node-3", "type": "connection", "weight": 3},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(graphData)
+}
+
+func (g *AdvancedGateway) savedQueriesHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock saved queries data
+	queries := []map[string]interface{}{
+		{
+			"id":          "query-001",
+			"name":        "Failed Login Attempts",
+			"query":       "SELECT * FROM events WHERE event.name = 'login_failed' AND ts > now() - INTERVAL 1 DAY",
+			"description": "Shows all failed login attempts in the last 24 hours",
+			"created_at":  time.Now().Add(-7 * 24 * time.Hour).Format(time.RFC3339),
+			"tags":        []string{"security", "authentication"},
+		},
+		{
+			"id":          "query-002",
+			"name":        "High Severity Events",
+			"query":       "SELECT * FROM events WHERE event.severity >= 8 ORDER BY ts DESC LIMIT 100",
+			"description": "Top 100 high severity security events",
+			"created_at":  time.Now().Add(-3 * 24 * time.Hour).Format(time.RFC3339),
+			"tags":        []string{"security", "alerts"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(queries)
+}
+
+func (g *AdvancedGateway) queryHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock query history data
+	history := []map[string]interface{}{
+		{
+			"id":             "hist-001",
+			"query":          "SELECT COUNT(*) FROM events WHERE ts > now() - INTERVAL 1 HOUR",
+			"executed_at":    time.Now().Add(-30 * time.Minute).Format(time.RFC3339),
+			"execution_time": 245,
+			"row_count":      1,
+			"status":         "success",
+		},
+		{
+			"id":             "hist-002",
+			"query":          "SELECT asset.id, COUNT(*) as event_count FROM events GROUP BY asset.id ORDER BY event_count DESC LIMIT 10",
+			"executed_at":    time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+			"execution_time": 1230,
+			"row_count":      10,
+			"status":         "success",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+func (g *AdvancedGateway) saveQueryHandler(w http.ResponseWriter, r *http.Request) {
+	var queryData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&queryData); err != nil {
+		http.Error(w, "Invalid query data", http.StatusBadRequest)
+		return
+	}
+
+	// In production, save to database
+	response := map[string]interface{}{
+		"id":      fmt.Sprintf("query-%d", time.Now().Unix()),
+		"message": "Query saved successfully",
+		"status":  "success",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (g *AdvancedGateway) executeQueryHandler(w http.ResponseWriter, r *http.Request) {
+	var queryRequest map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&queryRequest); err != nil {
+		http.Error(w, "Invalid query request", http.StatusBadRequest)
+		return
+	}
+
+	query, ok := queryRequest["query"].(string)
+	if !ok {
+		http.Error(w, "Query string required", http.StatusBadRequest)
+		return
+	}
+
+	// Mock query execution - in production, execute against ClickHouse
+	result := map[string]interface{}{
+		"columns":        []string{"ts", "asset_id", "event_name", "severity"},
+		"rows":           [][]interface{}{
+			{time.Now().Format(time.RFC3339), "DESKTOP-001", "process_create", 3},
+			{time.Now().Add(-5 * time.Minute).Format(time.RFC3339), "SERVER-002", "network_connect", 2},
+		},
+		"execution_time": 156,
+		"row_count":      2,
+		"query":          query,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (g *AdvancedGateway) healthStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// Return comprehensive health status
+	healthStatus := map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"services":  []map[string]interface{}{},
+		"metrics":   g.metrics,
+	}
+
+	for name, config := range g.services {
+		health := g.checkServiceHealth(config)
+		healthStatus["services"] = append(healthStatus["services"].([]map[string]interface{}), map[string]interface{}{
+			"name":   name,
+			"status": health.Status,
+			"url":    config.URL,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(healthStatus)
+}
+
+func (g *AdvancedGateway) logsHandler(w http.ResponseWriter, r *http.Request) {
+	// Mock logs data
+	logs := []map[string]interface{}{
+		{
+			"timestamp": time.Now().Add(-5 * time.Minute).Format(time.RFC3339),
+			"service":   "gateway",
+			"level":     "INFO",
+			"message":   "Agent enrollment successful for agent-12345",
+		},
+		{
+			"timestamp": time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+			"service":   "ingest",
+			"level":     "WARN",
+			"message":   "High event ingestion rate detected",
+		},
+		{
+			"timestamp": time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
+			"service":   "search",
+			"level":     "ERROR",
+			"message":   "Query timeout exceeded for complex search",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
 }
 
 func generateRandomHex(n int) string {

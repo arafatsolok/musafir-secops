@@ -159,8 +159,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
       - ./ssl:/etc/nginx/ssl
-    depends_on:
-      - gateway
+    # depends_on removed because gateway is managed outside this compose
 
   # Development Tools
   mailhog:
@@ -227,3 +226,5 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
+  musafir-network:
+    external: true

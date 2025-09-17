@@ -58,7 +58,7 @@ bash install_ubuntu_22_04.sh
 ```
 
 What it does:
-- Installs Docker, Go 1.23, Node.js 20, Nginx
+- Installs Docker, Go 1.21, Node.js 20, Nginx
 - Clones repo at ~/musafir-secops
 - Starts infra via Docker Compose (infra/docker-compose.yml and advanced if present)
 - Builds gateway/services/UI

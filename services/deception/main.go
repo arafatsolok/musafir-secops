@@ -10,11 +10,46 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/kafka-go"
+	"go.uber.org/zap"
+)
+
+// Logger for structured logging
+var logger *zap.Logger
+
+// Metrics for monitoring
+var (
+	honeypotInteractions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "honeypot_interactions_total",
+			Help: "Total number of interactions with honeypots",
+		},
+		[]string{"honeypot_id", "source_ip", "action"},
+	)
+	
+	canaryTokenTriggered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "canary_token_triggered_total",
+			Help: "Total number of canary token triggers",
+		},
+		[]string{"token_id", "token_type", "location"},
+	)
+	
+	serviceHealth = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "deception_service_health",
+			Help: "Health status of the deception service (1 = healthy, 0 = unhealthy)",
+		},
+	)
 )
 
 type DeceptionService struct {
@@ -903,9 +938,80 @@ func generateRandomID() string {
 }
 
 func main() {
-	deceptionService := NewDeceptionService()
-	deceptionService.Initialize()
+	// Initialize structured logging
+	var err error
+	logger, err = zap.NewProduction()
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Sync()
 
-	// Keep service running
-	select {}
+	// Register metrics with Prometheus
+	prometheus.MustRegister(honeypotInteractions)
+	prometheus.MustRegister(canaryTokenTriggered)
+	prometheus.MustRegister(serviceHealth)
+
+	// Set service as healthy
+	serviceHealth.Set(1)
+
+	// Create and initialize the deception service
+	service := NewDeceptionService()
+	service.Initialize()
+
+	// Set up HTTP server for metrics and API
+	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/health", healthCheckHandler)
+	http.HandleFunc("/api/v1/honeypots", service.honeypotHandler)
+	http.HandleFunc("/api/v1/canary-tokens", service.canaryTokenHandler)
+
+	// Start HTTP server
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: nil,
+	}
+
+	// Handle graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		logger.Info("Starting deception service HTTP server", zap.String("address", ":8080"))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("HTTP server error", zap.Error(err))
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-stop
+	logger.Info("Shutting down server...")
+	
+	// Set service as unhealthy during shutdown
+	serviceHealth.Set(0)
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown HTTP server
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Error("Server forced to shutdown", zap.Error(err))
+	}
+
+	// Close connections
+	if err := service.conn.Close(); err != nil {
+		logger.Error("Error closing database connection", zap.Error(err))
+	}
+	
+	if err := service.writer.Close(); err != nil {
+		logger.Error("Error closing Kafka writer", zap.Error(err))
+	}
+
+	logger.Info("Server exited properly")
+}
+
+// Health check handler
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }

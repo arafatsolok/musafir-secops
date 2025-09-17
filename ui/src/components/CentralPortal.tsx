@@ -231,7 +231,7 @@ const CentralPortal: React.FC = () => {
                     <span className="ml-2">
                       • req: {liveMetrics.request_count || 0}
                       • err: {liveMetrics.error_count || 0}
-                      • rt: {(liveMetrics.avg_response_time || 0).toFixed ? (liveMetrics.avg_response_time as number).toFixed(2) : liveMetrics.avg_response_time}s
+                      • rt: {Number(liveMetrics.avg_response_time || 0).toFixed(2)}s
                     </span>
                   )}
                 </div>

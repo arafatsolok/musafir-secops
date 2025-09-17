@@ -483,7 +483,7 @@ func (g *AdvancedGateway) loggingMiddleware(next http.Handler) http.Handler {
 			"correlation_id": cid,
 		}
 		b, _ := json.Marshal(entry)
-		log.Printf(string(b))
+		log.Print(string(b))
 	})
 }
 
@@ -612,9 +612,7 @@ func (g *AdvancedGateway) validateHMAC(ts string, body []byte, providedSig strin
 	mac.Write(body)
 	computed := hex.EncodeToString(mac.Sum(nil))
 	provided := strings.ToLower(strings.TrimSpace(providedSig))
-	if strings.HasPrefix(provided, "sha256=") {
-		provided = strings.TrimPrefix(provided, "sha256=")
-	}
+	provided = strings.TrimPrefix(provided, "sha256=")
 	return hmac.Equal([]byte(computed), []byte(provided))
 }
 
@@ -724,19 +722,15 @@ func (g *AdvancedGateway) websocketHandler(w http.ResponseWriter, r *http.Reques
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			message := WebSocketMessage{
-				Type:      "metrics",
-				Data:      g.metrics,
-				Timestamp: time.Now(),
-			}
-
-			if err := conn.WriteJSON(message); err != nil {
-				log.Printf("WebSocket write error: %v", err)
-				return
-			}
+	for range ticker.C {
+		message := WebSocketMessage{
+			Type:      "metrics",
+			Data:      g.metrics,
+			Timestamp: time.Now(),
+		}
+		if err := conn.WriteJSON(message); err != nil {
+			log.Printf("WebSocket write error: %v", err)
+			return
 		}
 	}
 }
@@ -819,7 +813,8 @@ func (g *AdvancedGateway) restartServiceHandler(w http.ResponseWriter, r *http.R
 }
 
 func (g *AdvancedGateway) configHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
+	switch r.Method {
+	case "GET":
 		// Return current configuration
 		config := map[string]interface{}{
 			"services":         g.services,
@@ -829,7 +824,7 @@ func (g *AdvancedGateway) configHandler(w http.ResponseWriter, r *http.Request) 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(config)
-	} else if r.Method == "PUT" {
+	case "PUT":
 		// Update configuration
 		var newConfig map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&newConfig); err != nil {
@@ -845,10 +840,12 @@ func (g *AdvancedGateway) configHandler(w http.ResponseWriter, r *http.Request) 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (g *AdvancedGateway) createServiceHandler(serviceName string, config *ServiceConfig) http.HandlerFunc {
+func (g *AdvancedGateway) createServiceHandler(_ string, config *ServiceConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		g.proxyRequest(w, r, config.URL)
 	}
@@ -951,15 +948,12 @@ func (g *AdvancedGateway) monitorServices() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			for _, config := range g.services {
-				go func(cfg *ServiceConfig) {
-					health := g.checkServiceHealth(cfg)
-					log.Printf("Service %s: %s (%.2fms)", cfg.Name, health.Status, float64(health.ResponseTime))
-				}(config)
-			}
+	for range ticker.C {
+		for _, config := range g.services {
+			go func(cfg *ServiceConfig) {
+				health := g.checkServiceHealth(cfg)
+				log.Printf("Service %s: %s (%.2fms)", cfg.Name, health.Status, float64(health.ResponseTime))
+			}(config)
 		}
 	}
 }
@@ -968,12 +962,9 @@ func (g *AdvancedGateway) collectMetrics() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			// Update metrics
-			g.metrics.LastUpdated = time.Now()
-		}
+	for range ticker.C {
+		// Update metrics
+		g.metrics.LastUpdated = time.Now()
 	}
 }
 

@@ -4,6 +4,7 @@ import ManagementDashboard from './components/ManagementDashboard'
 import QueryWorkbench from './components/QueryWorkbench'
 import AdvancedDashboard from './components/AdvancedDashboard'
 import CentralPortal from './components/CentralPortal'
+import AgentEnrollment from './components/AgentEnrollment'
 
 interface Event {
   ts: string
@@ -243,7 +244,12 @@ function App() {
         )}
 
       {activeView === 'query' && <QueryWorkbench />}
-      {activeView === 'management' && <ManagementDashboard />}
+      {activeView === 'management' && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+          <AgentEnrollment />
+          <ManagementDashboard />
+        </div>
+      )}
       {activeView === 'advanced' && <AdvancedDashboard />}
       </main>
     </div>

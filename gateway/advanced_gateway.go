@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -36,6 +37,10 @@ type AdvancedGateway struct {
 	services        map[string]*ServiceConfig
 	wsMu            sync.Mutex
 	wsClients       map[*websocket.Conn]struct{}
+	agentsMu        sync.Mutex
+	enrollTokens    map[string]time.Time
+	agentRecords    map[string]*AgentRecord
+	chConn          ch.Conn
 }
 type ServiceConfig struct {
 	Name    string `json:"name"`
@@ -86,6 +91,20 @@ type WebSocketMessage struct {
 	Type      string      `json:"type"`
 	Data      interface{} `json:"data"`
 	Timestamp time.Time   `json:"timestamp"`
+}
+
+type AgentRecord struct {
+	ID        string    `json:"id"`
+	Token     string    `json:"token"`
+	HMAC      string    `json:"hmac"`
+	CreatedAt time.Time `json:"created_at"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
+type AgentConfig struct {
+	GatewayURL   string `json:"gateway_url"`
+	PollInterval int    `json:"poll_interval_seconds"`
+	UseMTLS      bool   `json:"use_mtls"`
 }
 
 const correlationHeader = "X-Correlation-Id"
@@ -150,6 +169,8 @@ func NewAdvancedGateway() *AdvancedGateway {
 		wsUpgrader:      wsUpgrader,
 		services:        make(map[string]*ServiceConfig),
 		wsClients:       make(map[*websocket.Conn]struct{}),
+		enrollTokens:    make(map[string]time.Time),
+		agentRecords:    make(map[string]*AgentRecord),
 	}
 }
 
@@ -169,7 +190,32 @@ func (g *AdvancedGateway) Initialize() {
 	// Start metrics collection
 	go g.collectMetrics()
 
+	// Connect ClickHouse (best-effort)
+	dsn := os.Getenv("CLICKHOUSE_DSN")
+	if dsn == "" {
+		dsn = "tcp://localhost:9000?database=default"
+	}
+	conn, err := ch.Open(&ch.Options{Addr: []string{"localhost:9000"}})
+	if err == nil {
+		g.chConn = conn
+		g.ensureAgentTables()
+	} else {
+		log.Printf("{\"level\":\"warn\",\"msg\":\"clickhouse connect failed\",\"err\":%q}", err.Error())
+	}
+
 	log.Println("Advanced Gateway initialized successfully")
+}
+
+func (g *AdvancedGateway) ensureAgentTables() {
+	ctx := context.Background()
+	ddl1 := `CREATE TABLE IF NOT EXISTS musafir_agents (
+  id String, token String, hmac String, created_at DateTime, last_seen DateTime
+) ENGINE = MergeTree ORDER BY id`
+	_ = g.chConn.Exec(ctx, ddl1)
+	ddl2 := `CREATE TABLE IF NOT EXISTS musafir_enroll_tokens (
+  token String, expires_at DateTime, created_at DateTime, created_by String
+) ENGINE = MergeTree ORDER BY created_at`
+	_ = g.chConn.Exec(ctx, ddl2)
 }
 
 func (g *AdvancedGateway) loadServiceConfigs() {
@@ -422,7 +468,9 @@ func (g *AdvancedGateway) setupRoutes() {
 	// WebSocket endpoint for real-time updates
 	g.router.HandleFunc("/ws", g.websocketHandler)
 
-	// Ingest v1 events with HMAC validation
+	// Agent enrollment (public, token-based)
+	g.router.HandleFunc("/v1/enroll", g.agentEnrollHandler).Methods("POST")
+	// Agent/event HMAC ingest
 	g.router.HandleFunc("/v1/events", g.eventsIngestV1Handler).Methods("POST")
 
 	// API routes
@@ -430,6 +478,9 @@ func (g *AdvancedGateway) setupRoutes() {
 
 	// Events endpoint
 	api.HandleFunc("/events", g.eventsHandler).Methods("POST")
+
+	// Agent config polling (authenticated by per-agent HMAC headers)
+	api.HandleFunc("/agent/config", g.agentConfigHandler).Methods("GET")
 
 	// Search endpoint
 	api.HandleFunc("/search", g.searchHandler).Methods("GET", "POST")
@@ -440,6 +491,7 @@ func (g *AdvancedGateway) setupRoutes() {
 	admin.HandleFunc("/services/{service}/health", g.serviceHealthHandler).Methods("GET")
 	admin.HandleFunc("/services/{service}/restart", g.restartServiceHandler).Methods("POST")
 	admin.HandleFunc("/config", g.configHandler).Methods("GET", "PUT")
+	admin.HandleFunc("/agents", g.createEnrollmentTokenHandler).Methods("POST")
 
 	// Service-specific routes
 	for serviceName, config := range g.services {
@@ -509,13 +561,17 @@ func (g *AdvancedGateway) rateLimitMiddleware(next http.Handler) http.Handler {
 
 func (g *AdvancedGateway) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health, metrics, websocket, and v1 ingest
-		if r.URL.Path == "/health" || r.URL.Path == "/metrics" || r.URL.Path == "/ws" || r.URL.Path == "/v1/events" {
+		// Skip auth for health, metrics, websocket, and v1 enroll/events HMAC
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" || r.URL.Path == "/ws" || r.URL.Path == "/v1/enroll" || r.URL.Path == "/v1/events" {
 			next.ServeHTTP(w, r)
 			return
 		}
-
-		// Enforce JWT only for /api/*
+		// Agent config uses HMAC headers, no JWT
+		if strings.HasPrefix(r.URL.Path, "/api/agent/config") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Require JWT for all other /api/* requests
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
@@ -528,7 +584,6 @@ func (g *AdvancedGateway) authMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }
@@ -1030,4 +1085,114 @@ func main() {
 	gateway := NewAdvancedGateway()
 	gateway.Initialize()
 	gateway.Start("8080")
+}
+
+// Admin: create enrollment token
+func (g *AdvancedGateway) createEnrollmentTokenHandler(w http.ResponseWriter, r *http.Request) {
+	token := generateRandomHex(16)
+	g.agentsMu.Lock()
+	g.enrollTokens[token] = time.Now().Add(15 * time.Minute)
+	g.agentsMu.Unlock()
+	if g.chConn != nil {
+		ctx := context.Background()
+		_ = g.chConn.Exec(ctx, "INSERT INTO musafir_enroll_tokens (token, expires_at, created_at, created_by) VALUES (?, ?, ?, ?)", token, time.Now().Add(15*time.Minute), time.Now(), "admin")
+	}
+	resp := map[string]string{"enrollment_token": token}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// POST /v1/enroll { token: "..." }
+func (g *AdvancedGateway) agentEnrollHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	g.agentsMu.Lock()
+	exp, ok := g.enrollTokens[req.Token]
+	if !ok || time.Now().After(exp) {
+		g.agentsMu.Unlock()
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return
+	}
+	delete(g.enrollTokens, req.Token)
+	agentID := generateRandomHex(12)
+	hmacSecret := generateRandomHex(24)
+	rec := &AgentRecord{ID: agentID, Token: req.Token, HMAC: hmacSecret, CreatedAt: time.Now(), LastSeen: time.Now()}
+	g.agentRecords[agentID] = rec
+	g.agentsMu.Unlock()
+	if g.chConn != nil {
+		ctx := context.Background()
+		_ = g.chConn.Exec(ctx, "INSERT INTO musafir_agents (id, token, hmac, created_at, last_seen) VALUES (?, ?, ?, ?, ?)", agentID, req.Token, hmacSecret, time.Now(), time.Now())
+	}
+	cfg := AgentConfig{GatewayURL: g.discoverGatewayURL(), PollInterval: 30, UseMTLS: false}
+	resp := map[string]interface{}{"agent_id": agentID, "hmac": hmacSecret, "config": cfg}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GET /api/agent/config with headers: X-Agent-Id, X-Timestamp, X-Signature
+func (g *AdvancedGateway) agentConfigHandler(w http.ResponseWriter, r *http.Request) {
+	agentID := r.Header.Get("X-Agent-Id")
+	ts := r.Header.Get("X-Timestamp")
+	sig := r.Header.Get("X-Signature")
+	if agentID == "" || ts == "" || sig == "" {
+		http.Error(w, "missing headers", http.StatusUnauthorized)
+		return
+	}
+	if !g.validateAgentSignature(agentID, ts, nil, sig) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+	g.agentsMu.Lock()
+	rec := g.agentRecords[agentID]
+	if rec != nil {
+		rec.LastSeen = time.Now()
+	}
+	g.agentsMu.Unlock()
+	if g.chConn != nil {
+		ctx := context.Background()
+		_ = g.chConn.Exec(ctx, "ALTER TABLE musafir_agents UPDATE last_seen = ? WHERE id = ?", time.Now(), agentID)
+	}
+	cfg := AgentConfig{GatewayURL: g.discoverGatewayURL(), PollInterval: 30, UseMTLS: false}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cfg)
+}
+
+func (g *AdvancedGateway) validateAgentSignature(agentID, ts string, body []byte, provided string) bool {
+	g.agentsMu.Lock()
+	rec := g.agentRecords[agentID]
+	g.agentsMu.Unlock()
+	if rec == nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(rec.HMAC))
+	mac.Write([]byte(ts))
+	if body != nil {
+		mac.Write(body)
+	}
+	computed := hex.EncodeToString(mac.Sum(nil))
+	p := strings.ToLower(strings.TrimSpace(provided))
+	p = strings.TrimPrefix(p, "sha256=")
+	return hmac.Equal([]byte(computed), []byte(p))
+}
+
+func (g *AdvancedGateway) discoverGatewayURL() string {
+	// Basic discovery for return URL; can be enhanced
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	return "http://" + "localhost:" + port
+}
+
+func generateRandomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		mrand.Read(b)
+	}
+	return hex.EncodeToString(b)
 }

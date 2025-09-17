@@ -71,8 +71,8 @@ sudo tee "$ENV_FILE" > /dev/null <<EOF
 # MUSAFIR environment
 KAFKA_BROKERS=localhost:9092
 CLICKHOUSE_DSN=tcp://localhost:9000?database=default
-GATEWAY_JWT_SECRET=changeme-$(date +%s)
-GATEWAY_HMAC_SECRET=changeme-$(date +%s)
+GATEWAY_JWT_SECRET=
+GATEWAY_HMAC_SECRET=
 PORT=8080
 EOF
 sudo chmod 0644 "$ENV_FILE"
@@ -237,6 +237,9 @@ for svc in email forensics ml monitor ingest; do
     sudo systemctl start "musafir-$svc.service" || true
   fi
 done
+
+log "Ensuring secrets (auto-generate if missing)..."
+sudo bash "$APP_DIR/scripts/setup-secrets.sh" || true
 
 cat <<SUMMARY
 

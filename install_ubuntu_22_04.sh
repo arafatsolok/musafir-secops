@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# MUSAFIR SecOps - Automated Installer for Ubuntu 22.04
-# This script sets up infra (Kafka/ClickHouse/etc), builds services & UI, configures Nginx, and installs systemd units.
+# MUSAFIR SecOps - Automated Installer for Ubuntu 22.04 (robust)
+# Installs infra, builds services/UI, configures Nginx, systemd, secrets, and prints health & credentials.
 
 if [[ $(lsb_release -rs) != "22.04" ]]; then
   echo "[WARN] Ubuntu $(lsb_release -rs) detected. This script targets 22.04. Continuing..."
@@ -20,9 +20,16 @@ ENV_FILE="/etc/musafir.env"
 NGINX_SITE="/etc/nginx/sites-available/musafir"
 NGINX_SITE_LINK="/etc/nginx/sites-enabled/musafir"
 
-log() { echo "[INFO] $*"; }
-warn() { echo "[WARN] $*"; }
-err() { echo "[ERR]  $*"; }
+log() { echo -e "\033[1;34m[STEP]\033[0m $*"; }
+info() { echo -e "\033[0;32m[INFO]\033[0m $*"; }
+warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
+fail() { echo -e "\033[0;31m[FAIL]\033[0m $*"; }
+pass() { echo -e "\033[0;32m[PASS]\033[0m $*"; }
+
+run_or_warn() {
+  local desc="$1"; shift
+  if "$@"; then pass "$desc"; else warn "$desc (non-fatal)"; fi
+}
 
 log "Updating system and installing prerequisites..."
 sudo apt-get update -y
@@ -36,17 +43,14 @@ sudo chmod a+r /etc/apt/keyrings/docker.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt-get update -y
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo usermod -aG docker "$USER_NAME"
+run_or_warn "Add $USER_NAME to docker group" sudo usermod -aG docker "$USER_NAME"
 
 log "Installing Go 1.23..."
 GO_TGZ="go1.23.0.linux-amd64.tar.gz"
 curl -fsSLo "$GO_TGZ" https://go.dev/dl/go1.23.0.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf "$GO_TGZ"
-rm -f "$GO_TGZ"
-if ! grep -q "/usr/local/go/bin" "$HOME_DIR/.bashrc"; then
-  echo 'export PATH=$PATH:/usr/local/go/bin' | tee -a "$HOME_DIR/.bashrc" >/dev/null
-fi
+sudo tar -C /usr/local -xzf "$GO_TGZ" && rm -f "$GO_TGZ"
+if ! grep -q "/usr/local/go/bin" "$HOME_DIR/.bashrc"; then echo 'export PATH=$PATH:/usr/local/go/bin' | tee -a "$HOME_DIR/.bashrc" >/dev/null; fi
 export PATH=$PATH:/usr/local/go/bin
 
 log "Installing Node.js 20 LTS..."
@@ -58,15 +62,14 @@ mkdir -p "$APP_DIR"
 sudo chown -R "$USER_NAME":"$USER_NAME" "$APP_DIR"
 
 if [[ ! -d "$APP_DIR/.git" ]]; then
-  log "Cloning repo into $APP_DIR..."
+  info "Cloning repo into $APP_DIR"
   git clone https://github.com/arafatsolok/musafir-secops "$APP_DIR"
 else
-  log "Existing repo found; pulling latest..."
-  git -C "$APP_DIR" pull --ff-only
+  info "Updating existing repo..."
+  git -C "$APP_DIR" pull --ff-only || warn "Git pull failed (non-fatal)"
 fi
 
 log "Creating environment file at $ENV_FILE..."
-# Generate defaults, can be edited later
 sudo tee "$ENV_FILE" > /dev/null <<EOF
 # MUSAFIR environment
 KAFKA_BROKERS=localhost:9092
@@ -79,49 +82,35 @@ sudo chmod 0644 "$ENV_FILE"
 
 log "Starting infrastructure via Docker Compose..."
 cd "$APP_DIR/infra"
-sudo docker compose -f docker-compose.yml up -d || true
-# Precreate custom network used by advanced compose to avoid errors
-sudo docker network create musafir-network || true
-if [[ -f docker-compose-advanced.yml ]]; then
-  sudo docker compose -f docker-compose-advanced.yml up -d || true
-fi
+run_or_warn "Compose up base infra" sudo docker compose -f docker-compose.yml up -d
+run_or_warn "Create musafir-network" sudo docker network create musafir-network
+if [[ -f docker-compose-advanced.yml ]]; then run_or_warn "Compose up advanced infra" sudo docker compose -f docker-compose-advanced.yml up -d; fi
 
-log "Waiting 45s for infra to initialize (ClickHouse, Kafka, etc.)..."
-sleep 45
+info "Waiting 45s for infra to initialize (ClickHouse, Kafka, etc.)..."; sleep 45
 
 log "Building gateway and services..."
-cd "$APP_DIR"
-mkdir -p "$BIN_DIR"
+cd "$APP_DIR"; mkdir -p "$BIN_DIR"
 
-build_go() {
-  local dir="$1" name="$2"
-  if [[ -d "$dir" ]]; then
-    log "Building $name..."
-    (cd "$dir" && go mod tidy && go build -o "$BIN_DIR/$name") || { err "Failed to build $name"; exit 1; }
-  fi
-}
+build_go() { local dir="$1" name="$2"; if [[ -d "$dir" ]]; then info "Building $name"; (cd "$dir" && go mod tidy && go build -o "$BIN_DIR/$name") || fail "Build failed: $name"; fi; }
 
 build_go gateway gateway
-for svc in email forensics ml monitor ingest; do
-  build_go "services/$svc" "$svc"
-done
+for svc in email forensics ml monitor ingest; do build_go "services/$svc" "$svc"; done
 
 log "Building UI..."
 cd "$APP_DIR/ui"
-# Use npm install to avoid lockfile sync errors on fresh machines
-npm install
-npm run build
-sudo rm -rf /var/www/musafir-ui
-sudo mkdir -p /var/www/musafir-ui
-sudo cp -r dist/* /var/www/musafir-ui/
+npm install || fail "npm install failed"
+npm run build || fail "UI build failed"
+sudo rm -rf /var/www/html && sudo mkdir -p /var/www/html
+sudo cp -r dist/* /var/www/html/
 
 log "Configuring Nginx for UI and reverse proxy to gateway..."
+sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
 sudo tee "$NGINX_SITE" > /dev/null <<'NGINX'
 server {
     listen 80;
     server_name _;
 
-    root /var/www/musafir-ui;
+    root /var/www/html;
     index index.html;
 
     location /api/ {
@@ -154,13 +143,11 @@ server {
 }
 NGINX
 
-# Ensure our site is enabled and default is disabled
 sudo rm -f /etc/nginx/sites-enabled/default || true
 sudo ln -sf "$NGINX_SITE" "$NGINX_SITE_LINK" || true
-sudo nginx -t && sudo systemctl reload nginx
+if sudo nginx -t; then pass "Nginx config OK"; sudo systemctl reload nginx; else fail "Nginx config failed"; fi
 
 log "Creating systemd services..."
-# Gateway service
 sudo tee /etc/systemd/system/musafir-gateway.service > /dev/null <<EOF
 [Unit]
 Description=MUSAFIR Gateway
@@ -180,7 +167,6 @@ Group=$USER_NAME
 WantedBy=multi-user.target
 EOF
 
-# Optional core services (only if built)
 for svc in email forensics ml monitor ingest; do
   if [[ -f "$BIN_DIR/$svc" ]]; then
     sudo tee "/etc/systemd/system/musafir-$svc.service" > /dev/null <<EOF
@@ -204,7 +190,6 @@ EOF
   fi
 done
 
-# Infra compose unit
 sudo tee /etc/systemd/system/musafir-infra.service > /dev/null <<EOF
 [Unit]
 Description=MUSAFIR Infra (Docker Compose)
@@ -225,26 +210,22 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable musafir-infra.service
-sudo systemctl enable musafir-gateway.service || true
+run_or_warn "Enable musafir-infra" sudo systemctl enable musafir-infra.service
+run_or_warn "Enable musafir-gateway" sudo systemctl enable musafir-gateway.service
 for svc in email forensics ml monitor ingest; do
-  if [[ -f "$BIN_DIR/$svc" ]]; then
-    sudo systemctl enable "musafir-$svc.service" || true
-  fi
+  if [[ -f "$BIN_DIR/$svc" ]]; then run_or_warn "Enable musafir-$svc" sudo systemctl enable "musafir-$svc.service"; fi
 done
 
 log "Starting services..."
-sudo systemctl start musafir-infra.service
+run_or_warn "Start musafir-infra" sudo systemctl start musafir-infra.service
 sleep 30
-sudo systemctl start musafir-gateway.service || true
+run_or_warn "Start musafir-gateway" sudo systemctl start musafir-gateway.service
 for svc in email forensics ml monitor ingest; do
-  if [[ -f "$BIN_DIR/$svc" ]]; then
-    sudo systemctl start "musafir-$svc.service" || true
-  fi
+  if [[ -f "$BIN_DIR/$svc" ]]; then run_or_warn "Start musafir-$svc" sudo systemctl start "musafir-$svc.service"; fi
 done
 
 log "Ensuring secrets (auto-generate if missing)..."
-sudo bash "$APP_DIR/scripts/setup-secrets.sh" || true
+sudo bash "$APP_DIR/scripts/setup-secrets.sh" || warn "setup-secrets.sh failed"
 
 cat <<SUMMARY
 
@@ -271,49 +252,17 @@ SUMMARY
 
 log "Running sanity checks..."
 
-# 1) Gateway health
-if curl -fsS http://localhost:8080/health >/dev/null; then
-  echo "[PASS] Gateway health endpoint reachable"
-else
-  echo "[FAIL] Gateway health endpoint NOT reachable"
-fi
-
-# 2) Nginx site enabled
-if ls -1 /etc/nginx/sites-enabled | grep -q '^musafir$'; then
-  echo "[PASS] Nginx site 'musafir' enabled"
-else
-  echo "[FAIL] Nginx site 'musafir' not enabled"
-fi
-
-# 3) UI artifacts present
-if [ -f /var/www/musafir-ui/index.html ]; then
-  echo "[PASS] UI published to /var/www/musafir-ui (index.html found)"
-else
-  echo "[FAIL] UI not published to /var/www/musafir-ui"
-fi
-
-# 4) Gateway systemd status
-if systemctl is-active --quiet musafir-gateway.service; then
-  echo "[PASS] musafir-gateway.service is active"
-else
-  echo "[FAIL] musafir-gateway.service is NOT active"
-fi
+if curl -fsS http://localhost:8080/health >/dev/null; then pass "Gateway health endpoint reachable"; else fail "Gateway health endpoint NOT reachable"; fi
+if ls -1 /etc/nginx/sites-enabled | grep -q '^musafir$'; then pass "Nginx site 'musafir' enabled"; else fail "Nginx site 'musafir' not enabled"; fi
+if [ -f /var/www/html/index.html ]; then pass "UI published to /var/www/html (index.html found)"; else fail "UI not published to /var/www/html"; fi
+if systemctl is-active --quiet musafir-gateway.service; then pass "musafir-gateway.service is active"; else fail "musafir-gateway.service is NOT active"; fi
 
 echo
 echo "===== Credentials & Access ====="
-if [ -f /etc/musafir.env ]; then
-  # shellcheck disable=SC1091
-  . /etc/musafir.env || true
-  echo "Gateway Secrets (from /etc/musafir.env):"
-  echo "  GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-<unset>}"
-  echo "  GATEWAY_HMAC_SECRET: ${GATEWAY_HMAC_SECRET:-<unset>}"
-  echo "  PORT: ${PORT:-8080}"
-else
-  echo "  /etc/musafir.env not found"
-fi
+if [ -f /etc/musafir.env ]; then . /etc/musafir.env || true; echo "Gateway Secrets (from /etc/musafir.env):"; echo "  GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-<unset>}"; echo "  GATEWAY_HMAC_SECRET: ${GATEWAY_HMAC_SECRET:-<unset>}"; echo "  PORT: ${PORT:-8080}"; else echo "  /etc/musafir.env not found"; fi
 
 echo
-echo "Default service credentials (from docker-compose-advanced.yml):"
+echo "Default service credentials (advanced compose):"
 echo "  Grafana: admin / admin (http://<server_ip>:3001)"
 echo "  RabbitMQ: musafir / musafir123 (http://<server_ip>:15672)"
 echo "  MinIO: musafir / musafir123 (http://<server_ip>:9002)"

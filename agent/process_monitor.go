@@ -205,7 +205,7 @@ func (pm *ProcessMonitor) getProcessInfo(pid uint32) *ProcessInfo {
 	defer windows.CloseHandle(handle)
 
 	processInfo := &ProcessInfo{
-		PID: int(pid),
+		PID: uint32(pid),
 	}
 
 	// Get process name and path
@@ -220,19 +220,19 @@ func (pm *ProcessMonitor) getProcessInfo(pid uint32) *ProcessInfo {
 	}
 
 	// Get process owner
-	if user, domain := getProcessOwner(handle); user != "" {
+	if user, _ := getProcessOwner(handle); user != "" {
 		processInfo.User = user
-		processInfo.Domain = domain
+		// Domain field not available in ProcessInfo struct
 	}
 
 	// Get parent process ID
 	if ppid := getParentProcessID(); ppid != 0 {
-		processInfo.PPID = int(ppid)
+		processInfo.PPID = uint32(ppid)
 	}
 
-	// Get creation time
+	// Get creation time - using StartTime field instead of CreationTime
 	if creationTime := getProcessCreationTime(handle); !creationTime.IsZero() {
-		processInfo.CreationTime = creationTime.UTC().Format(time.RFC3339)
+		processInfo.StartTime = creationTime
 	}
 
 	// Get memory usage
@@ -244,16 +244,8 @@ func (pm *ProcessMonitor) getProcessInfo(pid uint32) *ProcessInfo {
 	processInfo.ThreadCount = getProcessThreadCount()
 	processInfo.HandleCount = getProcessHandleCount()
 
-	// Get session ID
-	if sessionID := getProcessSessionID(pid); sessionID != 0 {
-		processInfo.SessionID = int(sessionID)
-	}
-
-	// Get loaded modules
-	processInfo.LoadedModules = getProcessModules()
-
-	// Get security context
-	processInfo.SecurityContext = getProcessSecurityContext(handle)
+	// Session ID, LoadedModules, and SecurityContext fields not available in ProcessInfo struct
+	// These would need to be added to the struct or stored in a different way
 
 	return processInfo
 }
@@ -284,7 +276,7 @@ func (pm *ProcessMonitor) handleProcessEvent(event ProcessEvent) {
 		},
 		User: map[string]string{
 			"id":     event.ProcessInfo.User,
-			"domain": event.ProcessInfo.Domain,
+			"domain": "", // Domain field not available in ProcessInfo struct
 		},
 		Event: map[string]interface{}{
 			"class":    "process",
@@ -297,12 +289,9 @@ func (pm *ProcessMonitor) handleProcessEvent(event ProcessEvent) {
 				"path":         event.ProcessInfo.Path,
 				"command_line": event.ProcessInfo.CommandLine,
 				"user":         event.ProcessInfo.User,
-				"domain":       event.ProcessInfo.Domain,
-				"session_id":   event.ProcessInfo.SessionID,
-				"creation_time": event.ProcessInfo.CreationTime,
+				// domain, session_id, creation_time, thread_count, handle_count fields not available in ProcessInfo struct
+				"start_time":   event.ProcessInfo.StartTime,
 				"memory_usage": event.ProcessInfo.MemoryUsage,
-				"thread_count": event.ProcessInfo.ThreadCount,
-				"handle_count": event.ProcessInfo.HandleCount,
 			},
 		},
 		Ingest: map[string]string{
@@ -451,79 +440,6 @@ func getProcessThreadCount() int {
 func getProcessHandleCount() int {
 	// This requires GetProcessHandleCount API
 	return 0
-}
-
-func getProcessSessionID(pid uint32) uint32 {
-	var sessionID uint32
-	err := windows.ProcessIdToSessionId(pid, &sessionID)
-	if err != nil {
-		return 0
-	}
-	return sessionID
-}
-
-func getProcessModules() []ModuleInfo {
-	// This requires EnumProcessModules and GetModuleInformation
-	return []ModuleInfo{}
-}
-
-func getProcessSecurityContext(handle windows.Handle) ProcessSecurityContext {
-	context := ProcessSecurityContext{}
-
-	var token windows.Token
-	err := windows.OpenProcessToken(handle, windows.TOKEN_QUERY, &token)
-	if err != nil {
-		return context
-	}
-	defer token.Close()
-
-	// Get integrity level
-	if integrityLevel := getTokenIntegrityLevel(); integrityLevel != "" {
-		context.IntegrityLevel = integrityLevel
-	}
-
-	// Get privileges
-	context.Privileges = getTokenPrivileges()
-
-	// Check if elevated
-	context.Elevated = isTokenElevated()
-
-	return context
-}
-
-func getTokenIntegrityLevel() string {
-	// This requires TOKEN_MANDATORY_LABEL
-	return "Medium"
-}
-
-func getTokenPrivileges() []string {
-	// This requires TOKEN_PRIVILEGES structure
-	return []string{}
-}
-
-func isTokenElevated() bool {
-	// This requires TOKEN_ELEVATION
-	return false
-}
-
-func getEventSeverity(eventType string) int {
-	switch eventType {
-	case "process_create":
-		return 2 // Informational
-	case "process_terminate":
-		return 2 // Informational
-	case "process_inject":
-		return 4 // High
-	case "process_hollow":
-		return 5 // Critical
-	default:
-		return 3 // Medium
-	}
-}
-
-func getHostname() string {
-	hostname, _ := os.Hostname()
-	return hostname
 }
 
 // getProcessLocalIP gets the local IP address for process events

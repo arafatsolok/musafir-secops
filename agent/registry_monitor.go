@@ -284,7 +284,7 @@ func (rm *RegistryMonitor) processRegistryChange(watchedKey *WatchedRegistryKey)
 
 // performPeriodicScans performs periodic scans of critical registry keys
 func (rm *RegistryMonitor) performPeriodicScans() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -380,7 +380,7 @@ func (rm *RegistryMonitor) handleRegistryEvent(event RegistryEvent) {
 		},
 		User: map[string]string{
 			"id":     event.ProcessInfo.User,
-			"domain": event.ProcessInfo.Domain,
+			"domain": "", // Domain field not available in ProcessInfo struct
 		},
 		Event: map[string]interface{}{
 			"class":    "registry",
@@ -553,7 +553,7 @@ func (rm *RegistryMonitor) getRegistryValueTypeName(valueType uint32) string {
 
 func (rm *RegistryMonitor) getCurrentProcessInfo() ProcessInfo {
 	return ProcessInfo{
-		PID:  os.Getpid(),
+		PID:  uint32(os.Getpid()), // Convert int to uint32
 		Name: "registry_monitor",
 		Path: "",
 		User: "SYSTEM",

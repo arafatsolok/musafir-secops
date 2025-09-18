@@ -350,7 +350,7 @@ func (nm *NetworkMonitor) handleNetworkEvent(event NetworkEvent) {
 		},
 		User: map[string]string{
 			"id":     event.ProcessInfo.User,
-			"domain": event.ProcessInfo.Domain,
+			"domain": "", // Domain not available in ProcessInfo struct
 		},
 		Event: map[string]interface{}{
 			"class":    "network",

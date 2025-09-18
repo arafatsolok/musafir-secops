@@ -15,6 +15,102 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+// TelemetryCollector gathers comprehensive system telemetry
+type TelemetryCollector struct {
+}
+
+// SystemTelemetry represents comprehensive system information
+type SystemTelemetry struct {
+	Timestamp    time.Time            `json:"timestamp"`
+	OS           OSInfo               `json:"os"`
+	Hardware     HardwareInfo         `json:"hardware"`
+	Network      []NetworkConnection  `json:"network"`
+	Processes    []ProcessInfo        `json:"processes"`
+	Services     []ServiceInfo        `json:"services"`
+	Software     []SoftwareInfo       `json:"software"`
+	Performance  PerformanceMetrics   `json:"performance"`
+	Security     SecurityMetrics      `json:"security"`
+}
+
+type PerformanceMetrics struct {
+	CPUUsage    float64 `json:"cpu_usage"`
+	MemoryUsage float64 `json:"memory_usage"`
+	DiskUsage   float64 `json:"disk_usage"`
+	NetworkIO   struct {
+		BytesSent     uint64 `json:"bytes_sent"`
+		BytesReceived uint64 `json:"bytes_received"`
+		PacketsSent   uint64 `json:"packets_sent"`
+		PacketsRecv   uint64 `json:"packets_received"`
+	} `json:"network_io"`
+	DiskIO struct {
+		ReadBytes  uint64 `json:"read_bytes"`
+		WriteBytes uint64 `json:"write_bytes"`
+		ReadOps    uint64 `json:"read_ops"`
+		WriteOps   uint64 `json:"write_ops"`
+	} `json:"disk_io"`
+	Uptime int64 `json:"uptime_seconds"`
+}
+
+type SecurityMetrics struct {
+	AntivirusStatus    string    `json:"antivirus_status"`
+	FirewallStatus     string    `json:"firewall_status"`
+	WindowsUpdateStatus string   `json:"windows_update_status"`
+	LastSecurityScan   time.Time `json:"last_security_scan"`
+	ThreatCount        int       `json:"threat_count"`
+	QuarantineCount    int       `json:"quarantine_count"`
+	DefenderStatus     string    `json:"defender_status"`
+	UAC                bool      `json:"uac_enabled"`
+	BitLockerStatus    string    `json:"bitlocker_status"`
+	EncryptionStatus   string    `json:"encryption_status"`
+}
+
+type UserSession struct {
+	Username    string    `json:"username"`
+	SessionID   uint32    `json:"session_id"`
+	SessionType string    `json:"session_type"`
+	State       string    `json:"state"`
+	LoginTime   time.Time `json:"login_time"`
+	IdleTime    int64     `json:"idle_time"`
+	ClientName  string    `json:"client_name"`
+	ClientIP    string    `json:"client_ip"`
+}
+
+type EventLogSummary struct {
+	Source      string `json:"source"`
+	Level       string `json:"level"`
+	EventID     uint32 `json:"event_id"`
+	Count       int    `json:"count"`
+	LastOccured time.Time `json:"last_occurred"`
+	Description string `json:"description"`
+}
+
+type RegistryChange struct {
+	KeyPath   string    `json:"key_path"`
+	ValueName string    `json:"value_name"`
+	OldValue  string    `json:"old_value"`
+	NewValue  string    `json:"new_value"`
+	Timestamp time.Time `json:"timestamp"`
+	ProcessID uint32    `json:"process_id"`
+	User      string    `json:"user"`
+}
+
+type FileSystemChange struct {
+	Path      string    `json:"path"`
+	Action    string    `json:"action"`
+	Timestamp time.Time `json:"timestamp"`
+	ProcessID uint32    `json:"process_id"`
+	User      string    `json:"user"`
+	Size      int64     `json:"size"`
+	Hash      string    `json:"hash"`
+}
+
+type StartupProgram struct {
+	Name     string `json:"name"`
+	Command  string `json:"command"`
+	Location string `json:"location"`
+	Enabled  bool   `json:"enabled"`
+	Impact   string `json:"impact"`
+}
 
 // Enhanced Windows telemetry structures for EDR/XDR/SIEM
 type SystemInfo struct {
@@ -31,45 +127,7 @@ type SystemInfo struct {
 	Environment     map[string]string `json:"environment"`
 }
 
-type OSInfo struct {
-	Name           string `json:"name"`
-	Version        string `json:"version"`
-	Build          string `json:"build"`
-	Architecture   string `json:"architecture"`
-	InstallDate    string `json:"install_date"`
-	LastBootTime   string `json:"last_boot_time"`
-	TimeZone       string `json:"timezone"`
-	Locale         string `json:"locale"`
-	UpdateLevel    string `json:"update_level"`
-}
-
-type HardwareInfo struct {
-	CPU         CPUInfo         `json:"cpu"`
-	Memory      MemoryInfo      `json:"memory"`
-	Disks       []DiskInfo      `json:"disks"`
-	NetworkCards []NetworkCard  `json:"network_cards"`
-	BIOS        BIOSInfo        `json:"bios"`
-}
-
-type CPUInfo struct {
-	Name         string  `json:"name"`
-	Cores        int     `json:"cores"`
-	Threads      int     `json:"threads"`
-	Architecture string  `json:"architecture"`
-	Usage        float64 `json:"usage_percent"`
-	Temperature  float64 `json:"temperature_celsius"`
-}
-
-type MemoryInfo struct {
-	TotalPhysical     uint64  `json:"total_physical_mb"`
-	AvailablePhysical uint64  `json:"available_physical_mb"`
-	UsedPhysical      uint64  `json:"used_physical_mb"`
-	UsagePercent      float64 `json:"usage_percent"`
-	TotalVirtual      uint64  `json:"total_virtual_mb"`
-	AvailableVirtual  uint64  `json:"available_virtual_mb"`
-	PageFileSize      uint64  `json:"page_file_size_mb"`
-}
-
+// DiskInfo represents disk information specific to telemetry
 type DiskInfo struct {
 	Drive        string  `json:"drive"`
 	Type         string  `json:"type"`
@@ -81,6 +139,7 @@ type DiskInfo struct {
 	Health       string  `json:"health"`
 }
 
+// NetworkCard represents network card information specific to telemetry
 type NetworkCard struct {
 	Name        string   `json:"name"`
 	MACAddress  string   `json:"mac_address"`
@@ -106,24 +165,6 @@ type TelemetryNetworkInterface struct {
 	IPAddresses  []string `json:"ip_addresses"`
 	BytesSent    uint64   `json:"bytes_sent"`
 	BytesReceived uint64  `json:"bytes_received"`
-}
-
-type NetworkConnection struct {
-	Protocol    string `json:"protocol"`
-	LocalAddr   string `json:"local_address"`
-	LocalPort   int    `json:"local_port"`
-	RemoteAddr  string `json:"remote_address"`
-	RemotePort  int    `json:"remote_port"`
-	State       string `json:"state"`
-	ProcessID   int    `json:"process_id"`
-	ProcessName string `json:"process_name"`
-}
-
-type BIOSInfo struct {
-	Vendor       string `json:"vendor"`
-	Version      string `json:"version"`
-	ReleaseDate  string `json:"release_date"`
-	SerialNumber string `json:"serial_number"`
 }
 
 type SecurityInfo struct {
@@ -216,26 +257,6 @@ type NetworkIOStats struct {
 	PacketsReceivedPerSec uint64 `json:"packets_received_per_sec"`
 }
 
-type SoftwareInfo struct {
-	Name            string `json:"name"`
-	Version         string `json:"version"`
-	Publisher       string `json:"publisher"`
-	InstallDate     string `json:"install_date"`
-	InstallLocation string `json:"install_location"`
-	Size            uint64 `json:"size_mb"`
-	UninstallString string `json:"uninstall_string"`
-}
-
-type ServiceInfo struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	Status      string `json:"status"`
-	StartType   string `json:"start_type"`
-	ProcessID   int    `json:"process_id"`
-	Path        string `json:"path"`
-	Description string `json:"description"`
-}
-
 type UserInfo struct {
 	Name         string   `json:"name"`
 	FullName     string   `json:"full_name"`
@@ -248,48 +269,11 @@ type UserInfo struct {
 	ProfilePath  string   `json:"profile_path"`
 }
 
-// Enhanced process information for EDR capabilities
-type ProcessInfo struct {
-	PID              int                    `json:"pid"`
-	PPID             int                    `json:"ppid"`
-	Name             string                 `json:"name"`
-	Path             string                 `json:"path"`
-	CommandLine      string                 `json:"command_line"`
-	User             string                 `json:"user"`
-	Domain           string                 `json:"domain"`
-	SessionID        int                    `json:"session_id"`
-	CreationTime     string                 `json:"creation_time"`
-	CPUUsage         float64                `json:"cpu_usage_percent"`
-	MemoryUsage      uint64                 `json:"memory_usage_mb"`
-	ThreadCount      int                    `json:"thread_count"`
-	HandleCount      int                    `json:"handle_count"`
-	IOCounters       ProcessIOCounters      `json:"io_counters"`
-	NetworkConnections []NetworkConnection  `json:"network_connections"`
-	LoadedModules    []ModuleInfo           `json:"loaded_modules"`
-	FileAccess       []FileAccessInfo       `json:"file_access"`
-	RegistryAccess   []RegistryAccessInfo   `json:"registry_access"`
-	SecurityContext  ProcessSecurityContext `json:"security_context"`
-	ParentProcess    *ProcessInfo           `json:"parent_process,omitempty"`
-	ChildProcesses   []ProcessInfo          `json:"child_processes"`
-}
-
 type ProcessIOCounters struct {
 	ReadOperationCount  uint64 `json:"read_operation_count"`
 	WriteOperationCount uint64 `json:"write_operation_count"`
 	ReadTransferCount   uint64 `json:"read_transfer_count"`
 	WriteTransferCount  uint64 `json:"write_transfer_count"`
-}
-
-type ModuleInfo struct {
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	BaseAddress  string `json:"base_address"`
-	Size         uint64 `json:"size"`
-	Version      string `json:"version"`
-	Description  string `json:"description"`
-	Company      string `json:"company"`
-	Signed       bool   `json:"signed"`
-	SignerName   string `json:"signer_name"`
 }
 
 type FileAccessInfo struct {
@@ -377,7 +361,7 @@ func collectOSInfo() OSInfo {
 	}
 
 	if bootTime := getLastBootTime(); bootTime != "" {
-		osInfo.LastBootTime = bootTime
+		osInfo.LastBoot = bootTime
 	}
 
 	return osInfo
@@ -387,7 +371,7 @@ func collectHardwareInfo() HardwareInfo {
 	hardware := HardwareInfo{
 		CPU:    collectCPUInfo(),
 		Memory: collectMemoryInfo(),
-		Disks:  collectDiskInfo(),
+		Storage: collectDiskInfo(),
 		BIOS:   collectBIOSInfo(),
 	}
 
@@ -433,21 +417,18 @@ func collectMemoryInfo() MemoryInfo {
 	
 	if ret != 0 {
 		return MemoryInfo{
-			TotalPhysical:     memStatus.TotalPhys / (1024 * 1024),
-			AvailablePhysical: memStatus.AvailPhys / (1024 * 1024),
-			UsedPhysical:      (memStatus.TotalPhys - memStatus.AvailPhys) / (1024 * 1024),
-			UsagePercent:      float64(memStatus.MemoryLoad),
-			TotalVirtual:      memStatus.TotalVirtual / (1024 * 1024),
-			AvailableVirtual:  memStatus.AvailVirtual / (1024 * 1024),
-			PageFileSize:      memStatus.TotalPageFile / (1024 * 1024),
+			Total:     memStatus.TotalPhys,
+			Available: memStatus.AvailPhys,
+			Used:      memStatus.TotalPhys - memStatus.AvailPhys,
+			Usage:     float64(memStatus.MemoryLoad),
 		}
 	}
 
 	return MemoryInfo{}
 }
 
-func collectDiskInfo() []DiskInfo {
-	var disks []DiskInfo
+func collectDiskInfo() []StorageInfo {
+	var disks []StorageInfo
 	
 	drives := getDriveLetters()
 	for _, drive := range drives {
@@ -631,7 +612,7 @@ func getDriveLetters() []string {
 	return drives
 }
 
-func getDiskInfo(drive string) *DiskInfo {
+func getDiskInfo(drive string) *StorageInfo {
 	var freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes uint64
 	
 	drivePtr := windows.StringToUTF16Ptr(drive + "\\")
@@ -640,19 +621,18 @@ func getDiskInfo(drive string) *DiskInfo {
 		return nil
 	}
 
-	totalGB := totalNumberOfBytes / (1024 * 1024 * 1024)
-	freeGB := totalNumberOfFreeBytes / (1024 * 1024 * 1024)
-	usedGB := totalGB - freeGB
-	usagePercent := float64(usedGB) / float64(totalGB) * 100
+	usagePercent := float64(totalNumberOfBytes - totalNumberOfFreeBytes) / float64(totalNumberOfBytes) * 100
 
-	return &DiskInfo{
-		Drive:        drive,
-		TotalSize:    totalGB,
-		FreeSpace:    freeGB,
-		UsedSpace:    usedGB,
-		UsagePercent: usagePercent,
-		FileSystem:   getFileSystem(drive),
-		Type:         getDriveType(drive),
+	return &StorageInfo{
+		Device:     drive,
+		Type:       getDriveType(drive),
+		Size:       totalNumberOfBytes,
+		Used:       totalNumberOfBytes - totalNumberOfFreeBytes,
+		Available:  totalNumberOfFreeBytes,
+		Usage:      usagePercent,
+		FileSystem: getFileSystem(drive),
+		MountPoint: drive + "\\",
+		Health:     "Unknown",
 	}
 }
 
@@ -769,25 +749,26 @@ func readSoftwareInfo(hkey registry.Key, path string) *SoftwareInfo {
 		sw.Version = version
 	}
 
-	if publisher, _, err := k.GetStringValue("Publisher"); err == nil {
-		sw.Publisher = publisher
+	if vendor, _, err := k.GetStringValue("Publisher"); err == nil {
+		sw.Vendor = vendor
 	}
 
-	if installDate, _, err := k.GetStringValue("InstallDate"); err == nil {
-		sw.InstallDate = installDate
+	if installDateStr, _, err := k.GetStringValue("InstallDate"); err == nil {
+		// Parse install date string to time.Time
+		if installDate, err := time.Parse("20060102", installDateStr); err == nil {
+			sw.InstallDate = installDate
+		}
 	}
 
 	if installLocation, _, err := k.GetStringValue("InstallLocation"); err == nil {
 		sw.InstallLocation = installLocation
 	}
 
-	if uninstallString, _, err := k.GetStringValue("UninstallString"); err == nil {
-		sw.UninstallString = uninstallString
-	}
+	// UninstallString field doesn't exist in SoftwareInfo struct, skip it
 
 	if sizeStr, _, err := k.GetStringValue("EstimatedSize"); err == nil {
 		if size, err := strconv.ParseUint(sizeStr, 10, 64); err == nil {
-			sw.Size = size / 1024 // Convert KB to MB
+			sw.Size = size * 1024 // Convert KB to bytes
 		}
 	}
 

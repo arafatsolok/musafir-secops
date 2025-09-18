@@ -16,11 +16,17 @@ import (
 
 // Global monitoring instances
 var (
-	processMonitor  *ProcessMonitor
-	networkMonitor  *NetworkMonitor
-	fileMonitor     *FileMonitor
-	registryMonitor *RegistryMonitor
 	telemetryCollector *WindowsTelemetryCollector
+	processMonitor     *ProcessMonitor
+	networkMonitor     *NetworkMonitor
+	fileMonitor        *FileMonitor
+	registryMonitor    *RegistryMonitor
+	threatDetector     *ThreatDetector
+	queryEngine        *QueryEngine
+	assetInventory     *AssetInventory
+	complianceMonitor  *ComplianceMonitor
+	uebaAnalytics      *UEBAAnalytics
+	forensicsCollector *ForensicsCollector
 )
 
 // Windows-specific agent capabilities
@@ -115,6 +121,25 @@ func initializeMonitoring() error {
 	// Initialize registry monitor
 	registryMonitor = NewRegistryMonitor()
 	
+	// Initialize threat detector
+	threatDetector = NewThreatDetector()
+	
+	// Initialize query engine
+	queryEngine = NewQueryEngine(10000)
+	
+	// Initialize asset inventory
+	assetInventory = NewAssetInventory()
+	
+	// Initialize compliance monitor
+	complianceMonitor = NewComplianceMonitor()
+	
+	// Initialize UEBA analytics
+	uebaAnalytics = NewUEBAAnalytics()
+	
+	// Initialize forensics collector
+	forensicsCollector = NewForensicsCollector("default-collection", "./forensics")
+	
+	log.Println("All monitoring and analysis modules initialized successfully")
 	return nil
 }
 
@@ -127,8 +152,29 @@ func startMonitoring(gatewayURL string) {
 		if err := processMonitor.Start(); err != nil {
 			log.Printf("Process monitor error: %v", err)
 		}
-		// Forward process events to gateway
-		go forwardProcessEvents(processMonitor.GetEventChannel(), gatewayURL)
+		// Enhanced event processing for process monitor
+		go func() {
+			for event := range processMonitor.GetEventChannel() {
+				// Convert event to map for analytics processing
+				eventMap := map[string]interface{}{
+					"type":        "process_event",
+					"event_type":  event.EventType,
+					"timestamp":   event.Timestamp,
+					"process_info": event.ProcessInfo,
+					"parent_info": event.ParentInfo,
+					"event_data":  event.EventData,
+				}
+				
+				// Process through all analytics engines
+				processEventThroughAllAnalytics(eventMap)
+				
+				// Forward to gateway
+				envelope := generateEnhancedWindowsEvent()
+				envelope.Event = eventMap
+				data, _ := json.Marshal(envelope)
+				sendEventToGateway(gatewayURL, data)
+			}
+		}()
 	}()
 	
 	// Start network monitoring
@@ -136,8 +182,29 @@ func startMonitoring(gatewayURL string) {
 		if err := networkMonitor.Start(); err != nil {
 			log.Printf("Network monitor error: %v", err)
 		}
-		// Forward network events to gateway
-		go forwardNetworkEvents(networkMonitor.GetEventChannel(), gatewayURL)
+		// Enhanced event processing for network monitor
+		go func() {
+			for event := range networkMonitor.GetEventChannel() {
+				// Convert event to map for analytics processing
+				eventMap := map[string]interface{}{
+					"type":           "network_event",
+					"event_type":     event.EventType,
+					"timestamp":      event.Timestamp,
+					"process_info":   event.ProcessInfo,
+					"connection_info": event.ConnectionInfo,
+					"traffic_info":   event.TrafficInfo,
+				}
+				
+				// Process through all analytics engines
+				processEventThroughAllAnalytics(eventMap)
+				
+				// Forward to gateway
+				envelope := generateEnhancedWindowsEvent()
+				envelope.Event = eventMap
+				data, _ := json.Marshal(envelope)
+				sendEventToGateway(gatewayURL, data)
+			}
+		}()
 	}()
 	
 	// Start file monitoring
@@ -145,8 +212,30 @@ func startMonitoring(gatewayURL string) {
 		if err := fileMonitor.Start(); err != nil {
 			log.Printf("File monitor error: %v", err)
 		}
-		// Forward file events to gateway
-		go forwardFileEvents(fileMonitor.GetEventChannel(), gatewayURL)
+		// Enhanced event processing for file monitor
+		go func() {
+			for event := range fileMonitor.GetEventChannel() {
+				// Convert event to map for analytics processing
+				eventMap := map[string]interface{}{
+					"type":         "file_event",
+					"event_type":   event.EventType,
+					"timestamp":    event.Timestamp,
+					"process_info": event.ProcessInfo,
+					"file_info":    event.FileInfo,
+					"old_file_info": event.OldFileInfo,
+					"integrity_info": event.IntegrityInfo,
+				}
+				
+				// Process through all analytics engines
+				processEventThroughAllAnalytics(eventMap)
+				
+				// Forward to gateway
+				envelope := generateEnhancedWindowsEvent()
+				envelope.Event = eventMap
+				data, _ := json.Marshal(envelope)
+				sendEventToGateway(gatewayURL, data)
+			}
+		}()
 	}()
 	
 	// Start registry monitoring
@@ -154,14 +243,86 @@ func startMonitoring(gatewayURL string) {
 		if err := registryMonitor.Start(); err != nil {
 			log.Printf("Registry monitor error: %v", err)
 		}
-		// Forward registry events to gateway
-		go forwardRegistryEvents(registryMonitor.GetEventChannel(), gatewayURL)
+		// Enhanced event processing for registry monitor
+		go func() {
+			for event := range registryMonitor.GetEventChannel() {
+				// Convert event to map for analytics processing
+				eventMap := map[string]interface{}{
+					"type":          "registry_event",
+					"event_type":    event.EventType,
+					"timestamp":     event.Timestamp,
+					"process_info":  event.ProcessInfo,
+					"registry_info": event.RegistryInfo,
+					"old_value":     event.OldValue,
+					"new_value":     event.NewValue,
+				}
+				
+				// Process through all analytics engines
+				processEventThroughAllAnalytics(eventMap)
+				
+				// Forward to gateway
+				envelope := generateEnhancedWindowsEvent()
+				envelope.Event = eventMap
+				data, _ := json.Marshal(envelope)
+				sendEventToGateway(gatewayURL, data)
+			}
+		}()
 	}()
+	
+	// Start threat detection with enhanced forwarding
+	if threatDetector != nil {
+		alertChannel := make(chan ThreatAlert, 100)
+		go forwardThreatAlerts(alertChannel, gatewayURL)
+		
+		// ThreatDetector doesn't have Start method, it's always running
+		log.Println("Threat detection initialized successfully")
+	}
+
+	// Start asset discovery with enhanced forwarding
+	if assetInventory != nil {
+		go func() {
+			if err := assetInventory.DiscoverAssets(); err != nil {
+				log.Printf("Failed to start asset discovery: %v", err)
+			} else {
+				log.Println("Asset discovery started successfully")
+			}
+		}()
+		go forwardAssetUpdates(assetInventory, gatewayURL)
+	}
+
+	// Start compliance monitoring with enhanced forwarding
+	if complianceMonitor != nil {
+		go func() {
+			if err := complianceMonitor.RunComplianceCheck(); err != nil {
+				log.Printf("Failed to start compliance monitoring: %v", err)
+			} else {
+				log.Println("Compliance monitoring started successfully")
+			}
+		}()
+		go forwardComplianceReports(complianceMonitor, gatewayURL)
+	}
+
+	// Start UEBA analytics with enhanced forwarding
+	if uebaAnalytics != nil {
+		// UEBA analytics is always running and processes events as they come
+		log.Println("UEBA analytics initialized successfully")
+		go forwardUEBAAnomalies(uebaAnalytics, gatewayURL)
+	}
+
+	// Start forensics data forwarding
+	if forensicsCollector != nil {
+		go forwardForensicsData(forensicsCollector, gatewayURL)
+	}
+
+	// Start query results forwarding
+	if queryEngine != nil {
+		go forwardQueryResults(queryEngine, gatewayURL)
+	}
 	
 	// Start ransomware canary monitoring
 	go ransomware.StartCanaryMonitoring()
 	
-	log.Println("All monitoring services started successfully")
+	log.Println("All monitoring and analysis services started successfully")
 }
 
 // Stop all monitoring services
@@ -180,8 +341,20 @@ func stopMonitoring() {
 	if registryMonitor != nil {
 		registryMonitor.Stop()
 	}
+	if threatDetector != nil {
+		// ThreatDetector doesn't have a Stop method - it's always running
+		log.Println("ThreatDetector shutdown (no explicit stop method)")
+	}
+	if assetInventory != nil {
+		// AssetInventory doesn't have a StopDiscovery method
+		log.Println("AssetInventory shutdown (no explicit stop method)")
+	}
+	if complianceMonitor != nil {
+		// ComplianceMonitor doesn't have a StopMonitoring method
+		log.Println("ComplianceMonitor shutdown (no explicit stop method)")
+	}
 	
-	log.Println("All monitoring services stopped")
+	log.Println("All monitoring and analysis services stopped")
 }
 
 // Send periodic heartbeat with system status
@@ -225,8 +398,8 @@ func main() {
 	log.Printf("Sending initial enhanced telemetry event")
 	sendEventToGateway(gatewayURL, data)
 	
-	// Start periodic heartbeat (every 5 minutes)
-	go sendHeartbeat(gatewayURL, 5*time.Minute)
+	// Start periodic heartbeat (every 30 seconds)
+	go sendHeartbeat(gatewayURL, 30*time.Second)
 	
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

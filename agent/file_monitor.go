@@ -29,24 +29,7 @@ type FileEvent struct {
 	IntegrityInfo *IntegrityInfo `json:"integrity_info,omitempty"`
 }
 
-type FileInfo struct {
-	Path         string            `json:"path"`
-	Name         string            `json:"name"`
-	Size         int64             `json:"size"`
-	CreationTime string            `json:"creation_time"`
-	ModifiedTime string            `json:"modified_time"`
-	AccessTime   string            `json:"access_time"`
-	Attributes   uint32            `json:"attributes"`
-	Owner        string            `json:"owner"`
-	Permissions  string            `json:"permissions"`
-	FileType     string            `json:"file_type"`
-	Extension    string            `json:"extension"`
-	Hidden       bool              `json:"hidden"`
-	System       bool              `json:"system"`
-	Encrypted    bool              `json:"encrypted"`
-	Compressed   bool              `json:"compressed"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-}
+// FileInfo is defined in common_types.go
 
 type IntegrityInfo struct {
 	MD5Hash    string `json:"md5_hash"`
@@ -282,7 +265,7 @@ func (fm *FileMonitor) createFileEvent(action uint32, filePath string) *FileEven
 
 	// Get process information (simplified - would need more complex tracking)
 	processInfo := ProcessInfo{
-		PID:  os.Getpid(),
+		PID:  uint32(os.Getpid()),
 		Name: "unknown",
 		Path: "",
 		User: "SYSTEM",
@@ -324,27 +307,27 @@ func (fm *FileMonitor) getFileInfo(filePath string) *FileInfo {
 
 	fileInfo := &FileInfo{
 		Path:         filePath,
-		Name:         stat.Name(),
-		Size:         stat.Size(),
-		ModifiedTime: stat.ModTime().UTC().Format(time.RFC3339),
-		Attributes:   attrs,
-		Owner:        owner,
-		FileType:     fm.getFileType(filePath),
-		Extension:    strings.ToLower(filepath.Ext(filePath)),
-		Hidden:       attrs&windows.FILE_ATTRIBUTE_HIDDEN != 0,
-		System:       attrs&windows.FILE_ATTRIBUTE_SYSTEM != 0,
-		Encrypted:    attrs&windows.FILE_ATTRIBUTE_ENCRYPTED != 0,
-		Compressed:   attrs&windows.FILE_ATTRIBUTE_COMPRESSED != 0,
+		Name:        stat.Name(),
+		Size:        stat.Size(),
+		ModTime:     stat.ModTime(),
+		Attributes:  convertAttributesToStrings(attrs),
+		Owner:       owner,
+		Permissions: []string{fm.getFilePermissions()},
+		Metadata: map[string]string{
+			"file_type":  fm.getFileType(filePath),
+			"extension":  strings.ToLower(filepath.Ext(filePath)),
+			"hidden":     fmt.Sprintf("%t", attrs&windows.FILE_ATTRIBUTE_HIDDEN != 0),
+			"system":     fmt.Sprintf("%t", attrs&windows.FILE_ATTRIBUTE_SYSTEM != 0),
+			"encrypted":  fmt.Sprintf("%t", attrs&windows.FILE_ATTRIBUTE_ENCRYPTED != 0),
+			"compressed": fmt.Sprintf("%t", attrs&windows.FILE_ATTRIBUTE_COMPRESSED != 0),
+		},
 	}
 
 	// Get creation and access times (Windows-specific)
 	if times := fm.getFileTimes(filePath); times != nil {
-		fileInfo.CreationTime = times["creation"]
-		fileInfo.AccessTime = times["access"]
+		fileInfo.Metadata["creation_time"] = times["creation"]
+		fileInfo.Metadata["access_time"] = times["access"]
 	}
-
-	// Get permissions
-	fileInfo.Permissions = fm.getFilePermissions()
 
 	// Get metadata for executable files
 	if fm.isExecutableFile(filePath) {
@@ -467,7 +450,7 @@ func (fm *FileMonitor) handleFileEvent(event FileEvent) {
 		},
 		User: map[string]string{
 			"id":     event.ProcessInfo.User,
-			"domain": event.ProcessInfo.Domain,
+			"domain": "", // Domain not available in ProcessInfo struct
 		},
 		Event: map[string]interface{}{
 			"class":    "file",
@@ -479,16 +462,16 @@ func (fm *FileMonitor) handleFileEvent(event FileEvent) {
 				"file_path":      event.FileInfo.Path,
 				"file_name":      event.FileInfo.Name,
 				"file_size":      event.FileInfo.Size,
-				"file_type":      event.FileInfo.FileType,
-				"file_extension": event.FileInfo.Extension,
-				"creation_time":  event.FileInfo.CreationTime,
-				"modified_time":  event.FileInfo.ModifiedTime,
-				"access_time":    event.FileInfo.AccessTime,
+				"file_type":      event.FileInfo.Metadata["file_type"],
+				"file_extension": event.FileInfo.Metadata["extension"],
+				"creation_time":  event.FileInfo.Metadata["creation_time"],
+				"modified_time":  event.FileInfo.ModTime.Format(time.RFC3339),
+				"access_time":    event.FileInfo.Metadata["access_time"],
 				"owner":          event.FileInfo.Owner,
-				"hidden":         event.FileInfo.Hidden,
-				"system":         event.FileInfo.System,
-				"encrypted":      event.FileInfo.Encrypted,
-				"compressed":     event.FileInfo.Compressed,
+				"hidden":         event.FileInfo.Metadata["hidden"],
+				"system":         event.FileInfo.Metadata["system"],
+				"encrypted":      event.FileInfo.Metadata["encrypted"],
+				"compressed":     event.FileInfo.Metadata["compressed"],
 			},
 		},
 		Ingest: map[string]string{
@@ -657,4 +640,33 @@ func getFileEventSeverity(eventType, filePath string) int {
 	default:
 		return 1 // Low
 	}
+}
+
+// convertAttributesToStrings converts Windows file attributes to a slice of strings
+func convertAttributesToStrings(attrs uint32) []string {
+	var attributes []string
+	
+	if attrs&windows.FILE_ATTRIBUTE_READONLY != 0 {
+		attributes = append(attributes, "readonly")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_HIDDEN != 0 {
+		attributes = append(attributes, "hidden")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_SYSTEM != 0 {
+		attributes = append(attributes, "system")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
+		attributes = append(attributes, "directory")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_ARCHIVE != 0 {
+		attributes = append(attributes, "archive")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_ENCRYPTED != 0 {
+		attributes = append(attributes, "encrypted")
+	}
+	if attrs&windows.FILE_ATTRIBUTE_COMPRESSED != 0 {
+		attributes = append(attributes, "compressed")
+	}
+	
+	return attributes
 }

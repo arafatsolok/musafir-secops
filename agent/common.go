@@ -170,4 +170,26 @@ func drainDiskQueue(client *http.Client, url string) {
 	_ = os.WriteFile(path, bytes.Join(keep, []byte("\n")), 0644)
 }
 
+// getHostname returns the system hostname
+func getHostname() string {
+	hostname, _ := os.Hostname()
+	return hostname
+}
+
+// getEventSeverity returns the severity level for different event types
+func getEventSeverity(eventType string) int {
+	switch eventType {
+	case "process_create":
+		return 2 // Informational
+	case "process_terminate":
+		return 2 // Informational
+	case "process_inject":
+		return 4 // High
+	case "process_hollow":
+		return 5 // Critical
+	default:
+		return 3 // Medium
+	}
+}
+
 // startHeartbeat sends heartbeat envelopes periodically via the normal event path

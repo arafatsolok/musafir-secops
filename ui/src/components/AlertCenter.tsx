@@ -2,24 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
   AlertTriangle, 
-  Shield, 
   Activity, 
   Clock, 
-  Filter, 
   Search, 
-  Eye, 
-  CheckCircle, 
-  XCircle, 
   AlertCircle,
-  TrendingUp,
-  Users,
-  Server,
-  Network,
-  Lock,
-  Zap,
-  BarChart3,
   Settings,
-  Download,
+  CheckCircle,
+  XCircle,
+  TrendingUp,
+  Eye,
+  BarChart3,
   RefreshCw
 } from 'lucide-react';
 
@@ -37,7 +29,7 @@ interface Alert {
   riskScore: number;
 }
 
-interface MonitoringMetric {
+interface AlertMetrics {
   id: string;
   name: string;
   value: number;
@@ -60,15 +52,14 @@ interface AlertRule {
 }
 
 const AlertCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'alerts' | 'monitoring' | 'rules' | 'analytics'>('alerts');
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [metrics, setMetrics] = useState<MonitoringMetric[]>([]);
-  const [rules, setRules] = useState<AlertRule[]>([]);
-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
-  const [filterSeverity, setFilterSeverity] = useState<string>('all');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'alerts' | 'rules' | 'metrics' | 'analytics'>('alerts')
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [metrics, setMetrics] = useState<AlertMetrics[]>([])
+  const [rules, setRules] = useState<AlertRule[]>([])
+  const [filterSeverity, setFilterSeverity] = useState<string>('all')
+  const [filterCategory, setFilterCategory] = useState<string>('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     // Simulate loading data
@@ -341,7 +332,7 @@ const AlertCenter: React.FC = () => {
                     <div
                       key={alert.id}
                       className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => setSelectedAlert(alert)}
+                      onClick={() => console.log('Alert clicked:', alert.id)}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -375,7 +366,7 @@ const AlertCenter: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'monitoring' && (
+            {activeTab === 'metrics' && (
               <div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {metrics.map((metric) => (
@@ -404,7 +395,7 @@ const AlertCenter: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'rules' && (
+            {activeTab === 'analytics' && (
               <div>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold text-gray-900">Alert Rules Configuration</h3>

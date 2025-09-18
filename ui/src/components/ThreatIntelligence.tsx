@@ -1,27 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { 
   Shield, 
   Globe, 
-  AlertTriangle, 
   Eye, 
-  Download, 
   Upload,
   Search,
-  Filter,
   TrendingUp,
   Clock,
   Hash,
-  MapPin,
   Users,
-  Zap,
   Database,
   Network,
   FileText,
-  Star,
   ExternalLink,
-  RefreshCw,
-  CheckCircle,
-  XCircle
+  RefreshCw
 } from 'lucide-react'
 
 interface ThreatFeed {
@@ -81,7 +73,7 @@ const ThreatIntelligence: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTLP, setSelectedTLP] = useState<string>('all')
 
-  const [threatFeeds, setThreatFeeds] = useState<ThreatFeed[]>([
+  const [threatFeeds] = useState<ThreatFeed[]>([
     {
       id: '1',
       name: 'AlienVault OTX',
@@ -124,7 +116,7 @@ const ThreatIntelligence: React.FC = () => {
     }
   ])
 
-  const [iocs, setIOCs] = useState<IOC[]>([
+  const [iocs] = useState<IOC[]>([
     {
       id: '1',
       value: '192.168.1.100',
@@ -166,7 +158,7 @@ const ThreatIntelligence: React.FC = () => {
     }
   ])
 
-  const [threatActors, setThreatActors] = useState<ThreatActor[]>([
+  const [threatActors] = useState<ThreatActor[]>([
     {
       id: '1',
       name: 'APT29',
@@ -195,7 +187,7 @@ const ThreatIntelligence: React.FC = () => {
     }
   ])
 
-  const [campaigns, setCampaigns] = useState<Campaign[]>([
+  const [campaigns] = useState<Campaign[]>([
     {
       id: '1',
       name: 'Operation CloudHopper',

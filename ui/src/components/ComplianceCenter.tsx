@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { 
   Shield, 
   CheckCircle, 
@@ -6,19 +6,11 @@ import {
   AlertTriangle, 
   FileText, 
   Download, 
-  Calendar,
   BarChart3,
-  Settings,
-  Eye,
-  Filter,
   Search,
   Clock,
-  Users,
-  Database,
-  Lock,
-  Zap,
   TrendingUp,
-  AlertCircle
+  Settings
 } from 'lucide-react'
 
 interface ComplianceFramework {
@@ -61,7 +53,7 @@ const ComplianceCenter: React.FC = () => {
   const [selectedFramework, setSelectedFramework] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
 
-  const [frameworks, setFrameworks] = useState<ComplianceFramework[]>([
+  const [frameworks] = useState<ComplianceFramework[]>([
     {
       id: 'iso27001',
       name: 'ISO 27001',
@@ -104,7 +96,7 @@ const ComplianceCenter: React.FC = () => {
     }
   ])
 
-  const [controls, setControls] = useState<ComplianceControl[]>([
+  const [controls] = useState<ComplianceControl[]>([
     {
       id: '1',
       framework: 'iso27001',
@@ -146,7 +138,7 @@ const ComplianceCenter: React.FC = () => {
     }
   ])
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([
+  const [auditLogs] = useState<AuditLog[]>([
     {
       id: '1',
       timestamp: '2024-01-15 14:30:00',

@@ -4,19 +4,10 @@ import {
   Shield, 
   AlertTriangle, 
   TrendingUp, 
-  Users, 
-  Server, 
-  Eye,
   Brain,
   Network,
-  Zap,
   Target,
   BarChart3,
-  PieChart,
-  LineChart,
-  Globe,
-  Lock,
-  Unlock,
   Clock,
   CheckCircle,
   XCircle,
@@ -72,11 +63,11 @@ interface GraphData {
 }
 
 const AdvancedDashboard: React.FC = () => {
-  const [threats, setThreats] = useState<ThreatData[]>([]);
-  const [mlInsights, setMLInsights] = useState<MLInsight[]>([]);
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
+  const [threats] = useState<ThreatData[]>([]);
+  const [mlInsights] = useState<MLInsight[]>([]);
+  const [graphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedView, setSelectedView] = useState<'overview' | 'threats' | 'network' | 'ml' | 'analytics'>('overview');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
   const [selectedThreat, setSelectedThreat] = useState<ThreatData | null>(null);
   const [is3DMode, setIs3DMode] = useState(false);
@@ -96,27 +87,18 @@ const AdvancedDashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
-      setIsLoading(true);
       
       // Fetch threats
-      const threatsResponse = await fetch(`/api/threats?timeRange=${timeRange}`);
-      const threatsData = await threatsResponse.json();
-      setThreats(threatsData);
+      await fetch(`/api/threats?timeRange=${timeRange}`);
 
       // Fetch ML insights
-      const mlResponse = await fetch(`/api/ml/insights?timeRange=${timeRange}`);
-      const mlData = await mlResponse.json();
-      setMLInsights(mlData);
+      await fetch(`/api/ml/insights?timeRange=${timeRange}`);
 
       // Fetch network graph data
-      const graphResponse = await fetch(`/api/graph/network?timeRange=${timeRange}`);
-      const graphData = await graphResponse.json();
-      setGraphData(graphData);
+      await fetch(`/api/graph/network?timeRange=${timeRange}`);
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 

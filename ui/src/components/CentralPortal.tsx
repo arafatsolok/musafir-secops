@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { 
-  Layout, 
   Monitor, 
   BarChart3, 
   Search, 
@@ -147,7 +146,7 @@ const CentralPortal: React.FC = () => {
     const updatedServices = await Promise.all(
       services.map(async (service) => {
         try {
-          const response = await fetch(service.url, { 
+          await fetch(service.url, { 
             method: 'HEAD',
             mode: 'no-cors',
             cache: 'no-cache'
@@ -156,7 +155,7 @@ const CentralPortal: React.FC = () => {
         } catch (error) {
           // Try alternative check for services that don't support HEAD
           try {
-            const response = await fetch(service.url, { 
+            await fetch(service.url, { 
               method: 'GET',
               mode: 'no-cors',
               cache: 'no-cache'

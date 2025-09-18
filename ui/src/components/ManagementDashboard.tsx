@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { 
-  Settings, 
   Play, 
   Square, 
   RotateCcw, 
@@ -9,7 +8,6 @@ import {
   CheckCircle, 
   XCircle,
   Server,
-  Database,
   FileText,
   Cog,
   RefreshCw
@@ -45,7 +43,6 @@ const ManagementDashboard: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [config, setConfig] = useState<any>({})
   const [loading, setLoading] = useState(true)
-  const [selectedService, setSelectedService] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'services' | 'monitoring' | 'logs' | 'config'>('services')
 
   useEffect(() => {

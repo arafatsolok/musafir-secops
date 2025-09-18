@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { 
   Search, 
   FileText, 
@@ -7,22 +7,10 @@ import {
   Clock, 
   Eye, 
   Download, 
-  Filter,
   Database,
   Cpu,
-  Shield,
-  AlertTriangle,
-  CheckCircle,
-  Play,
-  Pause,
-  RotateCcw,
-  Zap,
   Hash,
-  Calendar,
-  User,
-  Globe,
-  Server,
-  Activity
+  User
 } from 'lucide-react'
 
 interface ForensicCase {
@@ -72,9 +60,8 @@ interface TimelineEvent {
 const ForensicsLab: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cases' | 'evidence' | 'analysis' | 'timeline' | 'reports'>('cases')
   const [selectedCase, setSelectedCase] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
 
-  const [cases, setCases] = useState<ForensicCase[]>([
+  const [cases] = useState<ForensicCase[]>([
     {
       id: '1',
       name: 'Ransomware Investigation - Server Compromise',
@@ -113,7 +100,7 @@ const ForensicsLab: React.FC = () => {
     }
   ])
 
-  const [evidence, setEvidence] = useState<Evidence[]>([
+  const [evidence] = useState<Evidence[]>([
     {
       id: '1',
       case_id: '1',
@@ -149,7 +136,7 @@ const ForensicsLab: React.FC = () => {
     }
   ])
 
-  const [artifacts, setArtifacts] = useState<Artifact[]>([
+  const [artifacts] = useState<Artifact[]>([
     {
       id: '1',
       evidence_id: '1',
@@ -179,7 +166,7 @@ const ForensicsLab: React.FC = () => {
     }
   ])
 
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([
+  const [timelineEvents] = useState<TimelineEvent[]>([
     {
       id: '1',
       timestamp: '2024-01-15 08:30:00',
@@ -574,7 +561,7 @@ const ForensicsLab: React.FC = () => {
           {selectedCaseData ? (
             <div className="p-6">
               <div className="space-y-6">
-                {timelineEvents.map((event, index) => (
+                {timelineEvents.map((event) => (
                   <div key={event.id} className="flex items-start space-x-4">
                     <div className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
                     <div className="flex-1">

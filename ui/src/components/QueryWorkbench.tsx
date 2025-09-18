@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Play, Download, Save, History, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Play, Download, Save, AlertTriangle } from 'lucide-react'
 
 interface QueryResult {
   columns: string[]
@@ -24,7 +24,6 @@ const QueryWorkbench: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([])
   const [queryHistory, setQueryHistory] = useState<string[]>([])
-  const [selectedQuery, setSelectedQuery] = useState<string | null>(null)
 
   // Sample queries
   const sampleQueries = [
@@ -195,7 +194,14 @@ ORDER BY score DESC`
 
   const loadQuery = (queryText: string) => {
     setQuery(queryText)
-    setSelectedQuery(queryText)
+    setSavedQueries([...savedQueries, { 
+      id: Date.now().toString(), 
+      name: `Query ${savedQueries.length + 1}`, 
+      query: queryText,
+      description: 'Loaded query',
+      created_at: new Date().toISOString(),
+      tags: []
+    }])
   }
 
   const exportResults = () => {

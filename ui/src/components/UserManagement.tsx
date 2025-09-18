@@ -4,27 +4,17 @@ import {
   UserPlus, 
   Shield, 
   Key, 
-  Settings, 
   Search, 
-  Filter, 
   Edit, 
   Trash2, 
   Eye, 
-  EyeOff,
   CheckCircle,
   XCircle,
   AlertCircle,
   Clock,
   Lock,
-  Unlock,
   UserCheck,
-  UserX,
-  Activity,
-  Calendar,
-  Mail,
-  Phone,
-  MapPin,
-  Building
+  Activity
 } from 'lucide-react';
 
 interface User {
@@ -80,13 +70,9 @@ const UserManagement: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [showRoleModal, setShowRoleModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -402,7 +388,6 @@ const UserManagement: React.FC = () => {
                     </select>
                   </div>
                   <button 
-                    onClick={() => setShowUserModal(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     <UserPlus className="w-4 h-4" />
@@ -465,7 +450,6 @@ const UserManagement: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex items-center space-x-2">
                               <button 
-                                onClick={() => setSelectedUser(user)}
                                 className="text-blue-600 hover:text-blue-900"
                               >
                                 <Eye className="w-4 h-4" />
@@ -491,7 +475,6 @@ const UserManagement: React.FC = () => {
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold text-gray-900">Role Management</h3>
                   <button 
-                    onClick={() => setShowRoleModal(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     <Shield className="w-4 h-4" />
@@ -526,7 +509,6 @@ const UserManagement: React.FC = () => {
                       </div>
                       <div className="mt-4 flex items-center space-x-2">
                         <button 
-                          onClick={() => setSelectedRole(role)}
                           className="flex-1 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
                         >
                           View Details

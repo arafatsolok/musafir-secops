@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -127,12 +126,6 @@ func postWithRetry(client *http.Client, url string, data []byte) error {
 	return lastErr
 }
 
-func computeHMACSHA256Hex(data, key []byte) string {
-	h := hmac.New(sha256.New, key)
-	h.Write(data)
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 func fmtError(code int) error {
 	return &httpError{code: code}
 }
@@ -178,28 +171,3 @@ func drainDiskQueue(client *http.Client, url string) {
 }
 
 // startHeartbeat sends heartbeat envelopes periodically via the normal event path
-func startHeartbeat(gatewayURL string, tenantID string, platform string) {
-	ticker := time.NewTicker(30 * time.Second)
-	go func() {
-		for range ticker.C {
-			host, _ := os.Hostname()
-			hb := Envelope{
-				Ts:       time.Now().UTC().Format(time.RFC3339),
-				TenantID: tenantID,
-				Asset:    map[string]string{"id": host, "type": "endpoint", "os": platform},
-				User:     map[string]string{"id": "", "sid": ""},
-				Event:    map[string]interface{}{"class": "agent", "name": "heartbeat", "severity": 1, "attrs": map[string]interface{}{"version": "0.0.1"}},
-				Ingest:   map[string]string{"agent_version": "0.0.1", "schema": "ocsf:1.2", "platform": platform},
-			}
-			data := toJSON(hb)
-			sendEventToGateway(gatewayURL, data)
-		}
-	}()
-}
-
-func toJSON(v interface{}) []byte {
-	buf := &bytes.Buffer{}
-	enc := json.NewEncoder(buf)
-	_ = enc.Encode(v)
-	return buf.Bytes()
-}

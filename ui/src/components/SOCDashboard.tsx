@@ -1,20 +1,27 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { 
   Shield, 
   AlertTriangle, 
-  Activity, 
   Server, 
+  CheckCircle, 
   Eye, 
-  Zap,
-  Clock,
-  CheckCircle,
+  Zap, 
+  Activity, 
+  BarChart3, 
+  AlertCircle, 
+  Clock, 
   XCircle,
-  AlertCircle,
-  BarChart3
+  RefreshCw
 } from 'lucide-react'
-import { dashboardService, alertService } from '../services'
+import { dashboardService } from '../services'
 
 interface Event {
+  id: string
+  title: string
+  severity: string
+  timestamp: string
+  status: string
   ts: string
   tenant_id: string
   asset: {
@@ -45,17 +52,19 @@ interface SOCDashboardProps {
   error: string | null
 }
 
-const SOCDashboard: React.FC<SOCDashboardProps> = ({ loading, error }) => {
+const SOCDashboard: React.FC<SOCDashboardProps> = () => {
+  const navigate = useNavigate()
   const [realTimeStats, setRealTimeStats] = useState({
     activeThreats: 0,
     criticalAlerts: 0,
     assetsMonitored: 0,
-    incidentsOpen: 0,
     complianceScore: 0,
-    threatLevel: 'Low'
+    threatLevel: 'Low' as 'Low' | 'Medium' | 'High' | 'Critical'
   })
-
-  const [recentAlerts, setRecentAlerts] = useState<any[]>([])
+  const [recentAlerts, setRecentAlerts] = useState<Event[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
     loadDashboardData()
@@ -63,41 +72,35 @@ const SOCDashboard: React.FC<SOCDashboardProps> = ({ loading, error }) => {
 
   const loadDashboardData = async () => {
     try {
+      setLoading(true)
+      setError(null)
       
-      // Load dashboard metrics
-      const metricsResponse = await dashboardService.getDashboardMetrics()
-      if (metricsResponse.success && metricsResponse.data) {
-        setRealTimeStats({
-          activeThreats: metricsResponse.data.totalIncidents,
-          criticalAlerts: metricsResponse.data.criticalAlerts,
-          assetsMonitored: metricsResponse.data.assetsMonitored,
-          incidentsOpen: metricsResponse.data.openIncidents,
-          complianceScore: 94, // Default value
-          threatLevel: metricsResponse.data.criticalAlerts > 10 ? 'High' : 
-                      metricsResponse.data.criticalAlerts > 5 ? 'Medium' : 'Low'
-        })
-      }
+      // Try to fetch real data from API
+      const [metricsResponse, alertsResponse] = await Promise.all([
+        dashboardService.getDashboardMetrics(),
+        dashboardService.getSecurityOverview()
+      ])
 
-      // Load recent alerts
-      const alertsResponse = await alertService.getRecentAlerts(5)
-      if (alertsResponse.success && alertsResponse.data) {
-        setRecentAlerts(alertsResponse.data.map(alert => ({
-          id: alert.id,
-          title: alert.title,
-          severity: alert.severity,
-          asset: alert.affectedAssets[0] || 'Unknown',
-          timestamp: new Date(alert.timestamp).toLocaleString(),
-          status: alert.status
-        })))
+      if (metricsResponse.success && alertsResponse.success) {
+        setRealTimeStats({
+          activeThreats: alertsResponse.data?.activeThreats || 0,
+          criticalAlerts: metricsResponse.data?.criticalAlerts || 0,
+          assetsMonitored: metricsResponse.data?.assetsMonitored || 0,
+          complianceScore: metricsResponse.data?.compliance?.score || 0,
+          threatLevel: alertsResponse.data?.threatLevel === 'low' ? 'Low' : 
+                      alertsResponse.data?.threatLevel === 'medium' ? 'Medium' :
+                      alertsResponse.data?.threatLevel === 'high' ? 'High' : 'Critical'
+        })
+      } else {
+        throw new Error('Failed to fetch dashboard data')
       }
     } catch (err) {
-      console.error('Error loading dashboard data:', err)
+      console.warn('API unavailable, using demo data:', err)
       // Fallback to demo data
       setRealTimeStats({
-        activeThreats: 23,
-        criticalAlerts: 7,
+        activeThreats: 12,
+        criticalAlerts: 3,
         assetsMonitored: 1247,
-        incidentsOpen: 12,
         complianceScore: 94,
         threatLevel: 'Medium'
       })
@@ -107,29 +110,160 @@ const SOCDashboard: React.FC<SOCDashboardProps> = ({ loading, error }) => {
           id: '1',
           title: 'Suspicious PowerShell Execution',
           severity: 'High',
-          asset: 'WS-001',
+          asset: {
+            id: 'WS-001',
+            type: 'workstation',
+            os: 'Windows 10',
+            ip: '192.168.1.100'
+          },
           timestamp: '2 minutes ago',
-          status: 'Open'
+          status: 'Open',
+          ts: new Date(Date.now() - 120000).toISOString(),
+          tenant_id: 'tenant-1',
+          user: {
+            id: 'user-001',
+            sid: 'S-1-5-21-123456789-1001'
+          },
+          event: {
+            class: 'process',
+            name: 'powershell_execution',
+            severity: 3,
+            attrs: {
+              command: 'powershell.exe -ExecutionPolicy Bypass',
+              pid: 1234
+            }
+          },
+          ingest: {
+            agent_version: '1.0.0',
+            schema: 'v2.1'
+          }
         },
         {
           id: '2',
           title: 'Failed Login Attempts',
           severity: 'Medium',
-          asset: 'DC-001',
+          asset: {
+            id: 'DC-001',
+            type: 'server',
+            os: 'Windows Server 2019',
+            ip: '192.168.1.10'
+          },
           timestamp: '5 minutes ago',
-          status: 'Investigating'
+          status: 'Investigating',
+          ts: new Date(Date.now() - 300000).toISOString(),
+          tenant_id: 'tenant-1',
+          user: {
+            id: 'user-002',
+            sid: 'S-1-5-21-123456789-1002'
+          },
+          event: {
+            class: 'authentication',
+            name: 'login_failure',
+            severity: 2,
+            attrs: {
+              username: 'admin',
+              source_ip: '192.168.1.50',
+              attempts: 5
+            }
+          },
+          ingest: {
+            agent_version: '1.0.0',
+            schema: 'v2.1'
+          }
         },
         {
           id: '3',
           title: 'Unusual Network Traffic',
           severity: 'Low',
-          asset: 'FW-001',
+          asset: {
+            id: 'FW-001',
+            type: 'firewall',
+            os: 'Linux',
+            ip: '192.168.1.1'
+          },
           timestamp: '10 minutes ago',
-          status: 'Resolved'
+          status: 'Resolved',
+          ts: new Date(Date.now() - 600000).toISOString(),
+          tenant_id: 'tenant-1',
+          user: {
+            id: 'user-003',
+            sid: 'S-1-5-21-123456789-1003'
+          },
+          event: {
+            class: 'network',
+            name: 'traffic_anomaly',
+            severity: 1,
+            attrs: {
+              protocol: 'TCP',
+              port: 443,
+              bytes_transferred: 1048576
+            }
+          },
+          ingest: {
+            agent_version: '1.0.0',
+            schema: 'v2.1'
+          }
         }
       ])
+    } finally {
+      setLoading(false)
     }
-  };
+  }
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await loadDashboardData()
+    setIsRefreshing(false)
+  }
+
+  const handleInitiateIncidentResponse = () => {
+    navigate('/incident-response')
+  }
+
+  const handleRunThreatHunt = () => {
+    navigate('/threat-hunting')
+  }
+
+  const handleGenerateReport = async () => {
+    try {
+      // Show loading state
+      const button = document.querySelector('[data-action="generate-report"]') as HTMLButtonElement
+      if (button) {
+        button.disabled = true
+        button.innerHTML = '<span class="text-sm font-medium text-green-700">Generating...</span>'
+      }
+
+      // Simulate report generation
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Create and download a sample report
+      const reportData = {
+        timestamp: new Date().toISOString(),
+        metrics: realTimeStats,
+        alerts: recentAlerts,
+        summary: 'Security Operations Center Dashboard Report'
+      }
+      
+      const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `soc-report-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      // Reset button
+      if (button) {
+        button.disabled = false
+        button.innerHTML = '<span class="text-sm font-medium text-green-700">Generate Report</span><svg class="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>'
+      }
+    } catch (error) {
+      console.error('Failed to generate report:', error)
+      alert('Failed to generate report. Please try again.')
+    }
+  }
 
   const getSeverityColor = (severity: string) => {
     switch (severity.toLowerCase()) {
@@ -257,19 +391,39 @@ const SOCDashboard: React.FC<SOCDashboardProps> = ({ loading, error }) => {
 
         {/* Quick Actions */}
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Quick Actions</h3>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-2 text-gray-500 hover:text-gray-700 transition-colors"
+              title="Refresh Dashboard"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           <div className="space-y-3">
-            <button className="w-full flex items-center justify-between p-3 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
+            <button 
+              onClick={handleInitiateIncidentResponse}
+              className="w-full flex items-center justify-between p-3 bg-red-50 hover:bg-red-100 rounded-lg transition-colors group"
+            >
               <span className="text-sm font-medium text-red-700">Initiate Incident Response</span>
-              <Zap className="h-4 w-4 text-red-600" />
+              <Zap className="h-4 w-4 text-red-600 group-hover:scale-110 transition-transform" />
             </button>
-            <button className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+            <button 
+              onClick={handleRunThreatHunt}
+              className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors group"
+            >
               <span className="text-sm font-medium text-blue-700">Run Threat Hunt</span>
-              <Activity className="h-4 w-4 text-blue-600" />
+              <Activity className="h-4 w-4 text-blue-600 group-hover:scale-110 transition-transform" />
             </button>
-            <button className="w-full flex items-center justify-between p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+            <button 
+              onClick={handleGenerateReport}
+              data-action="generate-report"
+              className="w-full flex items-center justify-between p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors group"
+            >
               <span className="text-sm font-medium text-green-700">Generate Report</span>
-              <BarChart3 className="h-4 w-4 text-green-600" />
+              <BarChart3 className="h-4 w-4 text-green-600 group-hover:scale-110 transition-transform" />
             </button>
           </div>
         </div>
@@ -348,7 +502,7 @@ const SOCDashboard: React.FC<SOCDashboardProps> = ({ loading, error }) => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {alert.asset}
+                    {alert.asset.id}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {alert.timestamp}

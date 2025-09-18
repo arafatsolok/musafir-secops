@@ -12,6 +12,7 @@ import {
   Shield
 } from 'lucide-react'
 import { incidentService, vulnerabilityService } from '../services'
+import { useApp } from '../contexts/AppContext'
 
 interface ThreatHunt {
   id: string
@@ -33,6 +34,7 @@ interface IOCIndicator {
 }
 
 const ThreatHunting: React.FC = () => {
+  const { } = useApp();
   const [activeTab, setActiveTab] = useState<'hunt' | 'ioc' | 'results'>('hunt')
   const [huntQuery, setHuntQuery] = useState('')
   const [iocSearch, setIocSearch] = useState('')
@@ -40,6 +42,90 @@ const ThreatHunting: React.FC = () => {
   const [iocIndicators, setIocIndicators] = useState<IOCIndicator[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // const [isRunningHunt, setIsRunningHunt] = useState(false)
+  // const [huntResults, setHuntResults] = useState<any[]>([])
+
+  // Event handlers
+  // const handleRunHunt = async () => {
+  //   if (!huntQuery.trim()) {
+  //     showWarning('Invalid Query', 'Please enter a hunt query before running.');
+  //     return;
+  //   }
+
+  //   setIsRunningHunt(true);
+  //   try {
+  //     // Simulate hunt execution
+  //     await new Promise(resolve => setTimeout(resolve, 2000));
+      
+  //     // Mock results
+  //     const mockResults = [
+  //       { id: 1, timestamp: new Date().toISOString(), asset: 'SERVER-01', event: 'Suspicious process execution' },
+  //       { id: 2, timestamp: new Date().toISOString(), asset: 'WORKSTATION-05', event: 'Unusual network connection' },
+  //       { id: 3, timestamp: new Date().toISOString(), asset: 'SERVER-03', event: 'File modification detected' }
+  //     ];
+      
+  //     setHuntResults(mockResults);
+  //     showSuccess('Hunt Complete', `Hunt executed successfully. Found ${mockResults.length} results.`);
+  //   } catch (error) {
+  //     showError('Hunt Failed', 'Failed to execute threat hunt. Please try again.');
+  //   } finally {
+  //     setIsRunningHunt(false);
+  //   }
+  // };
+
+  // const handleSaveHunt = () => {
+  //   if (!huntQuery.trim()) {
+  //     showWarning('Invalid Query', 'Please enter a hunt query before saving.');
+  //     return;
+  //   }
+
+  //   const newHunt: ThreatHunt = {
+  //     id: Date.now().toString(),
+  //     name: `Hunt ${savedHunts.length + 1}`,
+  //     query: huntQuery,
+  //     status: 'completed',
+  //     results: huntResults.length,
+  //     created: new Date().toISOString(),
+  //     duration: '2.3s'
+  //   };
+
+  //   setSavedHunts(prev => [...prev, newHunt]);
+  //   showSuccess('Hunt Saved', `Hunt "${newHunt.name}" has been saved successfully.`);
+  // };
+
+  // const handleDownloadResults = () => {
+  //   if (huntResults.length === 0) {
+  //     showWarning('No Results', 'No hunt results available to download.');
+  //     return;
+  //   }
+
+  //   const dataStr = JSON.stringify(huntResults, null, 2);
+  //   const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    
+  //   const url = URL.createObjectURL(dataBlob);
+  //   const link = document.createElement('a');
+  //   link.href = url;
+  //   link.download = `hunt-results-${new Date().toISOString().split('T')[0]}.json`;
+  //   document.body.appendChild(link);
+  //   link.click();
+  //   document.body.removeChild(link);
+  //   URL.revokeObjectURL(url);
+
+  //   showSuccess('Download Complete', `Downloaded ${huntResults.length} hunt results.`);
+  // };
+
+  // const handleRefresh = useCallback(async () => {
+  //   setLoading(true);
+  //   try {
+  //     await loadThreatData();
+  //     showSuccess('Data Refreshed', 'Threat hunting data has been refreshed successfully.');
+  //   } catch (error) {
+  //     console.error('Error refreshing data:', error);
+  //     showError('Refresh Failed', 'Failed to refresh threat data. Please try again.');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }, []);
 
   useEffect(() => {
     loadThreatData()
@@ -99,33 +185,33 @@ const ThreatHunting: React.FC = () => {
           threat_level: vuln.severity as 'high' | 'medium' | 'low',
           first_seen: vuln.discoveredAt,
           last_seen: vuln.discoveredAt,
-          sources: ['VirusTotal', 'AbuseIPDB', 'Hybrid Analysis'][Math.floor(Math.random() * 3)] ? ['VirusTotal', 'AbuseIPDB'] : ['Hybrid Analysis']
+          sources: ['Internal', 'VirusTotal', 'MISP']
         }))
         setIocIndicators(indicators)
       } else {
-        // Fallback to demo data
+        // Fallback to demo IOC data
         setIocIndicators([
           {
             type: 'ip',
             value: '192.168.1.100',
             threat_level: 'high',
             first_seen: '2024-01-15 10:00',
-            last_seen: '2024-01-15 15:30',
-            sources: ['VirusTotal', 'AbuseIPDB']
+            last_seen: '2024-01-15 14:30',
+            sources: ['Internal', 'VirusTotal']
           },
           {
-            type: 'hash',
-            value: 'a1b2c3d4e5f6...',
+            type: 'domain',
+            value: 'malicious-site.com',
             threat_level: 'medium',
             first_seen: '2024-01-14 16:20',
             last_seen: '2024-01-15 12:15',
-            sources: ['Hybrid Analysis', 'Joe Sandbox']
+            sources: ['MISP', 'ThreatConnect']
           }
         ])
       }
     } catch (err) {
-      setError('Failed to load threat hunting data')
       console.error('Error loading threat data:', err)
+      setError('Failed to load threat hunting data')
     } finally {
       setLoading(false)
     }

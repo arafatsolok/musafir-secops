@@ -12,8 +12,14 @@ import {
   TrendingUp,
   Eye,
   BarChart3,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Play,
+  Pause,
+  Edit,
+  Trash2
 } from 'lucide-react';
+import { useApp } from '../contexts/AppContext';
 
 interface Alert {
   id: string;
@@ -52,7 +58,8 @@ interface AlertRule {
 }
 
 const AlertCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'alerts' | 'rules' | 'metrics' | 'analytics'>('alerts')
+  const { showSuccess, showError, showWarning, showInfo } = useApp();
+  const [activeTab, setActiveTab] = useState<'alerts' | 'metrics' | 'rules'>('alerts')
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [metrics, setMetrics] = useState<AlertMetrics[]>([])
   const [rules, setRules] = useState<AlertRule[]>([])
@@ -60,44 +67,160 @@ const AlertCenter: React.FC = () => {
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
-    // Simulate loading data
+    loadAlertData()
+  }, [])
+
+  const handleClearFilters = () => {
+    if (filterSeverity === 'all' && filterCategory === 'all' && searchTerm === '') {
+      showWarning('No Filters Active', 'There are no active filters to clear.');
+      return;
+    }
+    
+    setFilterSeverity('all')
+    setFilterCategory('all')
+    setSearchTerm('')
+    showInfo('Filters Cleared', 'All filters have been reset to default values.')
+  }
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await loadAlertData()
+      showSuccess('Data Refreshed', 'Alert data has been successfully refreshed.')
+    } catch (error) {
+      showError('Refresh Failed', 'Failed to refresh alert data. Please try again.')
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  const handleAlertAction = (alertId: string, action: string) => {
+    const alert = alerts.find(a => a.id === alertId)
+    if (!alert) return
+
+    let newStatus: Alert['status']
+    let message = ''
+
+    switch (action) {
+      case 'acknowledge':
+        newStatus = 'investigating'
+        message = `Alert "${alert.title}" has been acknowledged and is now under investigation.`
+        setAlerts(prev => prev.map(a => 
+          a.id === alertId ? { ...a, status: newStatus } : a
+        ))
+        showSuccess('Alert Updated', message)
+        break
+      case 'resolve':
+        newStatus = 'resolved'
+        message = `Alert "${alert.title}" has been marked as resolved.`
+        setAlerts(prev => prev.map(a => 
+          a.id === alertId ? { ...a, status: newStatus } : a
+        ))
+        showSuccess('Alert Updated', message)
+        break
+      case 'false_positive':
+        newStatus = 'false_positive'
+        message = `Alert "${alert.title}" has been marked as a false positive.`
+        setAlerts(prev => prev.map(a => 
+          a.id === alertId ? { ...a, status: newStatus } : a
+        ))
+        showSuccess('Alert Updated', message)
+        break
+      case 'view':
+        showInfo('Alert Viewed', `Viewing details for alert: ${alert.title}`)
+        break
+      default:
+        console.log(`Action ${action} for alert ${alertId}`)
+    }
+  }
+
+  const handleRuleToggle = (ruleId: string) => {
+    const rule = rules.find(r => r.id === ruleId)
+    if (!rule) return
+
+    const newStatus = !rule.enabled
+    setRules(prev => prev.map(r => 
+      r.id === ruleId ? { ...r, enabled: newStatus } : r
+    ))
+
+    showSuccess(
+      'Rule Updated', 
+      `Rule "${rule.name}" has been ${newStatus ? 'enabled' : 'disabled'}.`
+    )
+  }
+
+  const handleRuleEdit = (ruleId: string) => {
+    const rule = rules.find(r => r.id === ruleId)
+    if (!rule) return
+
+    showInfo('Edit Rule', `Opening editor for rule: ${rule.name}`)
+  }
+
+  const handleRuleDelete = (ruleId: string) => {
+    const rule = rules.find(r => r.id === ruleId)
+    if (!rule) return
+
+    if (confirm(`Are you sure you want to delete the rule "${rule.name}"?`)) {
+      setRules(prev => prev.filter(r => r.id !== ruleId))
+      showSuccess('Rule Deleted', `Rule "${rule.name}" has been successfully deleted.`)
+    }
+  }
+
+  const handleExportAlerts = () => {
+    const dataStr = JSON.stringify(filteredAlerts, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `alerts-export-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    showSuccess('Export Complete', `Exported ${filteredAlerts.length} alerts to JSON file.`)
+  }
+
+  const loadAlertData = async () => {
+    setIsLoading(true)
+    // Simulate API call
     setTimeout(() => {
       setAlerts([
         {
           id: 'ALT-001',
-          title: 'Suspicious PowerShell Execution',
-          description: 'Encoded PowerShell command detected on endpoint DESKTOP-001',
-          severity: 'critical',
-          category: 'endpoint',
+          title: 'Suspicious PowerShell Activity',
+          description: 'Detected encoded PowerShell command execution on multiple endpoints',
+          severity: 'high',
+          category: 'malware',
           timestamp: '2024-01-15T14:30:00Z',
-          source: 'EDR Agent',
+          source: 'Endpoint Detection',
           status: 'new',
-          affectedAssets: 1,
-          riskScore: 95
+          affectedAssets: 5,
+          riskScore: 85
         },
         {
           id: 'ALT-002',
-          title: 'Multiple Failed Login Attempts',
-          description: 'User account admin@company.com has 15 failed login attempts',
-          severity: 'high',
+          title: 'Brute Force Login Attempt',
+          description: 'Multiple failed login attempts detected from external IP',
+          severity: 'medium',
           category: 'user',
           timestamp: '2024-01-15T14:25:00Z',
-          source: 'SIEM Correlation',
+          source: 'Network Monitor',
           status: 'investigating',
-          assignee: 'John Doe',
           affectedAssets: 1,
-          riskScore: 78
+          riskScore: 72
         },
         {
           id: 'ALT-003',
           title: 'Unusual Network Traffic',
-          description: 'High volume of outbound traffic to suspicious IP 192.168.1.100',
-          severity: 'medium',
+          description: 'Abnormal data transfer patterns detected',
+          severity: 'low',
           category: 'network',
           timestamp: '2024-01-15T14:20:00Z',
-          source: 'Network Monitor',
+          source: 'Traffic Analyzer',
           status: 'new',
           affectedAssets: 3,
           riskScore: 65
@@ -150,7 +273,7 @@ const AlertCenter: React.FC = () => {
 
       setIsLoading(false);
     }, 1000);
-  }, []);
+  }
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -284,46 +407,70 @@ const AlertCenter: React.FC = () => {
           <div className="p-6">
             {activeTab === 'alerts' && (
               <div>
-                {/* Filters */}
-                <div className="flex flex-wrap gap-4 mb-6">
-                  <div className="flex items-center space-x-2">
-                    <Search className="w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search alerts..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="border border-gray-300 rounded-md px-3 py-2 text-sm"
-                    />
+                {/* Controls */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <input
+                        type="text"
+                        placeholder="Search alerts..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <select
+                      value={filterSeverity}
+                      onChange={(e) => setFilterSeverity(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="all">All Severities</option>
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                    
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="all">All Categories</option>
+                      <option value="malware">Malware</option>
+                      <option value="network">Network</option>
+                      <option value="authentication">Authentication</option>
+                      <option value="data_loss">Data Loss</option>
+                    </select>
+                
+                    <button
+                      onClick={handleClearFilters}
+                      className="px-3 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      Clear Filters
+                    </button>
                   </div>
-                  <select
-                    value={filterSeverity}
-                    onChange={(e) => setFilterSeverity(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm"
-                  >
-                    <option value="all">All Severities</option>
-                    <option value="critical">Critical</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 text-sm"
-                  >
-                    <option value="all">All Categories</option>
-                    <option value="malware">Malware</option>
-                    <option value="network">Network</option>
-                    <option value="endpoint">Endpoint</option>
-                    <option value="user">User</option>
-                    <option value="compliance">Compliance</option>
-                    <option value="system">System</option>
-                  </select>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Refresh</span>
-                  </button>
+                  
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
+                      className="flex items-center px-3 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                    
+                    <button
+                      onClick={handleExportAlerts}
+                      className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </button>
+                  </div>
                 </div>
 
                 {/* Alerts List */}
@@ -354,11 +501,45 @@ const AlertCenter: React.FC = () => {
                             <span>{new Date(alert.timestamp).toLocaleString()}</span>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-gray-600">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </div>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleAlertAction(alert.id, 'view')}
+                              className="text-blue-600 hover:text-blue-900 transition-colors"
+                              title="View Details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            
+                            {alert.status === 'new' && (
+                              <button
+                                onClick={() => handleAlertAction(alert.id, 'acknowledge')}
+                                className="text-yellow-600 hover:text-yellow-900 transition-colors"
+                                title="Acknowledge"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                            )}
+                            
+                            {alert.status !== 'resolved' && (
+                              <button
+                                onClick={() => handleAlertAction(alert.id, 'resolve')}
+                                className="text-green-600 hover:text-green-900 transition-colors"
+                                title="Resolve"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                            )}
+                            
+                            <button
+                              onClick={() => handleAlertAction(alert.id, 'false_positive')}
+                              className="text-gray-600 hover:text-gray-900 transition-colors"
+                              title="Mark as False Positive"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
                       </div>
                     </div>
                   ))}
@@ -395,7 +576,7 @@ const AlertCenter: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'analytics' && (
+            {activeTab === 'rules' && (
               <div>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold text-gray-900">Alert Rules Configuration</h3>
@@ -430,45 +611,37 @@ const AlertCenter: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-gray-600">
-                            <Settings className="w-4 h-4" />
+                          <button
+                            onClick={() => handleRuleToggle(rule.id)}
+                            className={`p-1 rounded transition-colors ${
+                              rule.enabled 
+                                ? 'text-green-600 hover:text-green-900' 
+                                : 'text-gray-400 hover:text-gray-600'
+                            }`}
+                            title={rule.enabled ? 'Disable Rule' : 'Enable Rule'}
+                          >
+                            {rule.enabled ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                          </button>
+                          
+                          <button
+                            onClick={() => handleRuleEdit(rule.id)}
+                            className="text-blue-600 hover:text-blue-900 transition-colors"
+                            title="Edit Rule"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          
+                          <button
+                            onClick={() => handleRuleDelete(rule.id)}
+                            className="text-red-600 hover:text-red-900 transition-colors"
+                            title="Delete Rule"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'analytics' && (
-              <div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="border border-gray-200 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Alert Trends (Last 7 Days)</h3>
-                    <div className="h-64 flex items-center justify-center bg-gray-50 rounded">
-                      <p className="text-gray-500">Chart visualization would be here</p>
-                    </div>
-                  </div>
-                  <div className="border border-gray-200 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Alert Categories</h3>
-                    <div className="space-y-3">
-                      {['Endpoint Security', 'Network Anomalies', 'User Behavior', 'Malware Detection', 'Compliance'].map((category, index) => (
-                        <div key={category} className="flex items-center justify-between">
-                          <span className="text-gray-700">{category}</span>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-24 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-600 h-2 rounded-full" 
-                                style={{ width: `${(5 - index) * 20}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm text-gray-500">{(5 - index) * 20}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               </div>
             )}

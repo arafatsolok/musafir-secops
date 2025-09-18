@@ -19,8 +19,15 @@ import Navbar from './components/Navbar'
 import Login from './components/Login'
 import NotFound from './components/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
+import { AppProvider } from './contexts/AppContext'
+import NotificationSystem from './components/NotificationSystem'
 
 interface Event {
+  id: string
+  title: string
+  severity: string
+  timestamp: string
+  status: string
   ts: string
   tenant_id: string
   asset: {
@@ -96,115 +103,118 @@ function App() {
   };
 
   return (
-    <BrowserRouter>
-      <div className="flex h-screen bg-gray-100">
-        {isAuthenticated && <Navbar onLogout={handleLogout} />}
-        
-        <div className="flex-1 overflow-auto">
-          <Routes>
-            <Route path="/login" element={
-              isAuthenticated ? <Navigate to="/dashboard" /> : <Login onLogin={handleLogin} />
-            } />
-            
-            <Route path="/" element={
-              isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
-            } />
-            
-            <Route path="/dashboard" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <SOCDashboard events={events} loading={loading} error={error} />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/threat-hunting" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <ThreatHunting />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/incident-response" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <IncidentResponse />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/compliance" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <ComplianceCenter />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/forensics" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <ForensicsLab />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/threat-intel" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <ThreatIntelligence />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/assets" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <AssetInventory />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/ueba" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <UserBehaviorAnalytics />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/vulnerabilities" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <VulnerabilityManagement />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/alerts" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <AlertCenter />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/users" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <UserManagement />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/query" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <QueryWorkbench />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/advanced" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <AdvancedDashboard />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/portal" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <CentralPortal />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="/agents" element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <AgentEnrollment />
-              </ProtectedRoute>
-            } />
-            
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+    <AppProvider>
+      <BrowserRouter>
+        <div className="flex h-screen bg-gray-100">
+          {isAuthenticated && <Navbar onLogout={handleLogout} />}
+          
+          <div className="flex-1 overflow-auto">
+            <Routes>
+              <Route path="/login" element={
+                isAuthenticated ? <Navigate to="/dashboard" /> : <Login onLogin={handleLogin} />
+              } />
+              
+              <Route path="/" element={
+                isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
+              } />
+              
+              <Route path="/dashboard" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <SOCDashboard events={events} loading={loading} error={error} />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/threat-hunting" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <ThreatHunting />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/incident-response" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <IncidentResponse />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/compliance" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <ComplianceCenter />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/forensics" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <ForensicsLab />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/threat-intel" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <ThreatIntelligence />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/assets" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <AssetInventory />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/ueba" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <UserBehaviorAnalytics />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/vulnerabilities" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <VulnerabilityManagement />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/alerts" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <AlertCenter />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/users" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <UserManagement />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/query" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <QueryWorkbench />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/advanced" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <AdvancedDashboard />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/portal" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <CentralPortal />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="/agents" element={
+                <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <AgentEnrollment />
+                </ProtectedRoute>
+              } />
+              
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
+          <NotificationSystem />
         </div>
-      </div>
-    </BrowserRouter>
+      </BrowserRouter>
+    </AppProvider>
   );
 }
 

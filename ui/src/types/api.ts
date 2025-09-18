@@ -128,6 +128,9 @@ export interface DashboardMetrics {
   openIncidents: number;
   criticalAlerts: number;
   assetsMonitored: number;
+  compliance?: {
+    score: number;
+  };
   vulnerabilities: {
     critical: number;
     high: number;

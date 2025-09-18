@@ -67,7 +67,7 @@ const AdvancedDashboard: React.FC = () => {
   const [mlInsights] = useState<MLInsight[]>([]);
   const [graphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedView, setSelectedView] = useState<'overview' | 'threats' | 'network' | 'ml' | 'analytics'>('overview');
-  const [isLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h');
   const [selectedThreat, setSelectedThreat] = useState<ThreatData | null>(null);
   const [is3DMode, setIs3DMode] = useState(false);
@@ -87,6 +87,7 @@ const AdvancedDashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
+      setIsLoading(true);
       
       // Fetch threats
       await fetch(`/api/threats?timeRange=${timeRange}`);
@@ -99,6 +100,8 @@ const AdvancedDashboard: React.FC = () => {
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 

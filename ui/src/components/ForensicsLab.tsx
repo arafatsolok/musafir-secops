@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Search, 
   FileText, 
@@ -10,34 +10,14 @@ import {
   Database,
   Cpu,
   Hash,
-  User
+  User,
+  Plus,
+  Play
 } from 'lucide-react'
+import { forensicsService } from '../services'
+import type { Evidence } from '../services/forensics'
 
-interface ForensicCase {
-  id: string
-  name: string
-  description: string
-  status: 'active' | 'completed' | 'on_hold'
-  priority: 'low' | 'medium' | 'high' | 'critical'
-  investigator: string
-  created: string
-  updated: string
-  evidence_count: number
-  artifacts_count: number
-}
-
-interface Evidence {
-  id: string
-  case_id: string
-  name: string
-  type: 'disk_image' | 'memory_dump' | 'network_capture' | 'log_file' | 'registry' | 'file_system'
-  size: string
-  hash: string
-  collected: string
-  source: string
-  status: 'processing' | 'analyzed' | 'corrupted'
-}
-
+// Local interfaces for types not in api.ts
 interface Artifact {
   id: string
   evidence_id: string
@@ -57,149 +37,265 @@ interface TimelineEvent {
   confidence: 'high' | 'medium' | 'low'
 }
 
+// Local ForensicCase interface to match component needs
+interface ForensicCase {
+  id: string
+  name: string
+  description: string
+  status: 'active' | 'completed' | 'on_hold'
+  priority: 'low' | 'medium' | 'high' | 'critical'
+  investigator: string
+  created: string
+  updated: string
+  evidence_count: number
+  artifacts_count: number
+}
+
 const ForensicsLab: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'cases' | 'evidence' | 'analysis' | 'timeline' | 'reports'>('cases')
   const [selectedCase, setSelectedCase] = useState<string | null>(null)
+  const [cases, setCases] = useState<ForensicCase[]>([])
+  const [evidence, setEvidence] = useState<Evidence[]>([])
+  const [artifacts, setArtifacts] = useState<Artifact[]>([])
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
+  const [showNewCase, setShowNewCase] = useState(false)
+  const [showNewEvidence, setShowNewEvidence] = useState(false)
+  const [newCaseForm, setNewCaseForm] = useState({
+    name: '',
+    description: '',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
+    investigator: ''
+  })
+  const [newEvidenceForm, setNewEvidenceForm] = useState({
+    name: '',
+    type: 'disk_image' as 'disk_image' | 'memory_dump' | 'network_capture' | 'log_file' | 'registry' | 'file_system',
+    source: '',
+    hash: ''
+  })
 
-  const [cases] = useState<ForensicCase[]>([
-    {
-      id: '1',
-      name: 'Ransomware Investigation - Server Compromise',
-      description: 'Investigation of ransomware attack on production servers',
-      status: 'active',
-      priority: 'critical',
-      investigator: 'Dr. Sarah Chen',
-      created: '2024-01-15 09:00:00',
-      updated: '2024-01-15 15:30:00',
-      evidence_count: 5,
-      artifacts_count: 127
-    },
-    {
-      id: '2',
-      name: 'Data Exfiltration Analysis',
-      description: 'Analysis of suspicious data transfer activities',
-      status: 'active',
-      priority: 'high',
-      investigator: 'Mike Rodriguez',
-      created: '2024-01-14 14:20:00',
-      updated: '2024-01-15 11:45:00',
-      evidence_count: 3,
-      artifacts_count: 89
-    },
-    {
-      id: '3',
-      name: 'Insider Threat Investigation',
-      description: 'Investigation of potential insider threat activities',
-      status: 'completed',
-      priority: 'medium',
-      investigator: 'Lisa Wang',
-      created: '2024-01-10 10:15:00',
-      updated: '2024-01-13 16:30:00',
-      evidence_count: 7,
-      artifacts_count: 234
-    }
-  ])
+  useEffect(() => {
+    loadCases()
+  }, [])
 
-  const [evidence] = useState<Evidence[]>([
-    {
-      id: '1',
-      case_id: '1',
-      name: 'Server-01-Disk-Image.dd',
-      type: 'disk_image',
-      size: '500 GB',
-      hash: 'sha256:a1b2c3d4e5f6...',
-      collected: '2024-01-15 09:30:00',
-      source: 'Production Server DB-01',
-      status: 'analyzed'
-    },
-    {
-      id: '2',
-      case_id: '1',
-      name: 'Memory-Dump-Server-01.mem',
-      type: 'memory_dump',
-      size: '32 GB',
-      hash: 'sha256:f6e5d4c3b2a1...',
-      collected: '2024-01-15 09:45:00',
-      source: 'Production Server DB-01',
-      status: 'processing'
-    },
-    {
-      id: '3',
-      case_id: '1',
-      name: 'Network-Traffic-Capture.pcap',
-      type: 'network_capture',
-      size: '2.5 GB',
-      hash: 'sha256:1a2b3c4d5e6f...',
-      collected: '2024-01-15 10:00:00',
-      source: 'Network Tap - VLAN 100',
-      status: 'analyzed'
+  useEffect(() => {
+    if (selectedCase) {
+      loadEvidence(selectedCase)
+      loadTimeline(selectedCase)
     }
-  ])
+  }, [selectedCase])
 
-  const [artifacts] = useState<Artifact[]>([
-    {
-      id: '1',
-      evidence_id: '1',
-      type: 'Malicious File',
-      description: 'Ransomware executable found in system32 directory',
-      timestamp: '2024-01-15 08:45:23',
-      relevance: 'high',
-      tags: ['malware', 'ransomware', 'executable']
-    },
-    {
-      id: '2',
-      evidence_id: '1',
-      type: 'Registry Modification',
-      description: 'Suspicious registry keys added for persistence',
-      timestamp: '2024-01-15 08:46:15',
-      relevance: 'high',
-      tags: ['persistence', 'registry', 'autostart']
-    },
-    {
-      id: '3',
-      evidence_id: '3',
-      type: 'Network Connection',
-      description: 'Outbound connection to suspicious IP address',
-      timestamp: '2024-01-15 08:47:30',
-      relevance: 'medium',
-      tags: ['network', 'c2', 'outbound']
+  const loadCases = async () => {
+    try {
+      const response = await forensicsService.getCases()
+      
+      if (response.success && response.data) {
+        setCases(response.data)
+      } else {
+        // Fallback to demo data if API is not available
+        setCases([
+          {
+            id: '1',
+            name: 'Ransomware Investigation - Server Compromise',
+            description: 'Investigation of ransomware attack on production servers',
+            status: 'active',
+            priority: 'critical',
+            investigator: 'Dr. Sarah Chen',
+            created: '2024-01-15 09:00:00',
+            updated: '2024-01-15 15:30:00',
+            evidence_count: 5,
+            artifacts_count: 127
+          },
+          {
+            id: '2',
+            name: 'Data Exfiltration Analysis',
+            description: 'Analysis of suspicious data transfer activities',
+            status: 'active',
+            priority: 'high',
+            investigator: 'Mike Rodriguez',
+            created: '2024-01-14 14:20:00',
+            updated: '2024-01-15 11:45:00',
+            evidence_count: 3,
+            artifacts_count: 89
+          },
+          {
+            id: '3',
+            name: 'Insider Threat Investigation',
+            description: 'Investigation of potential insider threat activities',
+            status: 'completed',
+            priority: 'medium',
+            investigator: 'Lisa Wang',
+            created: '2024-01-10 10:15:00',
+            updated: '2024-01-13 16:30:00',
+            evidence_count: 7,
+            artifacts_count: 234
+          }
+        ])
+      }
+    } catch (err) {
+      console.error('Error loading cases:', err)
     }
-  ])
+  }
 
-  const [timelineEvents] = useState<TimelineEvent[]>([
-    {
-      id: '1',
-      timestamp: '2024-01-15 08:30:00',
-      event_type: 'Initial Access',
-      description: 'Suspicious email attachment opened by user',
-      source: 'Email Logs',
-      confidence: 'high'
-    },
-    {
-      id: '2',
-      timestamp: '2024-01-15 08:45:23',
-      event_type: 'Malware Execution',
-      description: 'Ransomware payload executed on system',
-      source: 'Process Logs',
-      confidence: 'high'
-    },
-    {
-      id: '3',
-      timestamp: '2024-01-15 08:46:15',
-      event_type: 'Persistence',
-      description: 'Registry modifications for persistence',
-      source: 'Registry Analysis',
-      confidence: 'high'
-    },
-    {
-      id: '4',
-      timestamp: '2024-01-15 08:47:30',
-      event_type: 'Command & Control',
-      description: 'Connection established to C2 server',
-      source: 'Network Logs',
-      confidence: 'medium'
+  const loadEvidence = async (caseId: string) => {
+    try {
+      const response = await forensicsService.getEvidence(caseId)
+      
+      if (response.success && response.data) {
+        setEvidence(response.data)
+        // Load artifacts for all evidence
+        const allArtifacts: Artifact[] = []
+        for (const evidenceItem of response.data) {
+          const artifactsResponse = await forensicsService.getArtifacts(evidenceItem.id)
+          if (artifactsResponse.success && artifactsResponse.data) {
+            allArtifacts.push(...artifactsResponse.data)
+          }
+        }
+        setArtifacts(allArtifacts)
+      } else {
+        // Fallback to demo data
+        setEvidence([
+          {
+            id: '1',
+            case_id: caseId,
+            name: 'Server-01-Disk-Image.dd',
+            type: 'disk_image',
+            size: '500000000000', // 500 GB in bytes as string
+            hash: 'sha256:a1b2c3d4e5f6...',
+            collected: '2024-01-15 10:30:00',
+            source: 'Production Server DB-01',
+            status: 'analyzed'
+          }
+        ])
+        setArtifacts([
+          {
+            id: '1',
+            evidence_id: '1',
+            type: 'Malicious File',
+            description: 'Ransomware executable found in system directory',
+            timestamp: '2024-01-15 09:45:00',
+            relevance: 'high',
+            tags: ['malware', 'ransomware', 'executable']
+          }
+        ])
+      }
+    } catch (err) {
+      console.error('Error loading evidence:', err)
     }
-  ])
+  }
+
+  const loadTimeline = async (caseId: string) => {
+    try {
+      const response = await forensicsService.getTimeline(caseId)
+      
+      if (response.success && response.data) {
+        setTimelineEvents(response.data)
+      } else {
+        // Fallback to demo data
+        setTimelineEvents([
+          {
+            id: '1',
+            timestamp: '2024-01-15 09:00:00',
+            event_type: 'Initial Detection',
+            description: 'Ransomware activity detected by EDR system',
+            source: 'EDR Alert',
+            confidence: 'high'
+          }
+        ])
+      }
+    } catch (err) {
+      console.error('Error loading timeline:', err)
+    }
+  }
+
+  const handleCreateCase = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    try {
+      const response = await forensicsService.createCase(newCaseForm)
+      
+      if (response.success && response.data) {
+        setCases(prev => [response.data!, ...prev])
+        setShowNewCase(false)
+        setNewCaseForm({ name: '', description: '', priority: 'medium', investigator: '' })
+      } else {
+        console.error('Failed to create case:', response.error)
+      }
+    } catch (err) {
+      console.error('Error creating case:', err)
+    }
+  }
+
+  const handleCreateEvidence = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!selectedCase) return
+    
+    try {
+      const evidenceData = {
+        ...newEvidenceForm,
+        case_id: selectedCase
+      }
+      
+      const response = await forensicsService.createEvidence(evidenceData)
+      
+      if (response.success && response.data) {
+        setEvidence(prev => [response.data!, ...prev])
+        setShowNewEvidence(false)
+        setNewEvidenceForm({ name: '', type: 'disk_image', source: '', hash: '' })
+        // Reload case to update evidence count
+        loadCases()
+      } else {
+        console.error('Failed to create evidence:', response.error)
+      }
+    } catch (err) {
+      console.error('Error creating evidence:', err)
+    }
+  }
+
+  const handleStartAnalysis = async (caseId: string) => {
+    try {
+      const response = await forensicsService.startAnalysis(caseId, 'comprehensive')
+      
+      if (response.success && response.data) {
+        console.log('Analysis started:', response.data.analysisId)
+        // You could add a notification or update UI to show analysis is running
+      } else {
+        console.error('Failed to start analysis:', response.error)
+      }
+    } catch (err) {
+      console.error('Error starting analysis:', err)
+    }
+  }
+
+  const handleGenerateReport = async (caseId: string) => {
+    try {
+      const response = await forensicsService.generateReport(caseId, 'pdf')
+      
+      if (response.success && response.data) {
+        // Open the report URL in a new tab
+        window.open(response.data.reportUrl, '_blank')
+      } else {
+        console.error('Failed to generate report:', response.error)
+      }
+    } catch (err) {
+      console.error('Error generating report:', err)
+    }
+  }
+
+  const handleExportEvidence = async (evidenceId: string) => {
+    try {
+      const response = await forensicsService.exportEvidence(evidenceId, 'e01')
+      
+      if (response.success && response.data) {
+        // Trigger download
+        window.open(response.data.exportUrl, '_blank')
+      } else {
+        console.error('Failed to export evidence:', response.error)
+      }
+    } catch (err) {
+      console.error('Error exporting evidence:', err)
+    }
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -264,7 +360,8 @@ const ForensicsLab: React.FC = () => {
   const caseArtifacts = artifacts.filter(a => caseEvidence.some(e => e.id === a.evidence_id))
 
   return (
-    <div className="p-6 bg-gray-50 min-h-full">
+    <>
+      <div className="p-6 bg-gray-50 min-h-full">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -273,15 +370,23 @@ const ForensicsLab: React.FC = () => {
             <p className="text-gray-600">Investigate security incidents and analyze digital evidence</p>
           </div>
           <div className="flex space-x-3">
-            <button className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-              <Search className="h-4 w-4" />
-              <span>New Investigation</span>
-            </button>
-            <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
-              <Download className="h-4 w-4" />
-              <span>Export Report</span>
-            </button>
-          </div>
+             <button 
+               onClick={() => setShowNewCase(true)}
+               className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+             >
+               <Plus className="h-4 w-4" />
+               <span>New Investigation</span>
+             </button>
+             {selectedCase && (
+               <button 
+                 onClick={() => handleGenerateReport(selectedCase)}
+                 className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+               >
+                 <Download className="h-4 w-4" />
+                 <span>Export Report</span>
+               </button>
+             )}
+           </div>
         </div>
       </div>
 
@@ -408,15 +513,28 @@ const ForensicsLab: React.FC = () => {
                 </div>
                 
                 <div className="mt-6 pt-4 border-t border-gray-200 space-y-2">
-                  <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                    <Eye className="h-4 w-4" />
-                    <span>View Evidence</span>
-                  </button>
-                  <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
-                    <Download className="h-4 w-4" />
-                    <span>Generate Report</span>
-                  </button>
-                </div>
+                   <button 
+                     onClick={() => setActiveTab('evidence')}
+                     className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                   >
+                     <Eye className="h-4 w-4" />
+                     <span>View Evidence</span>
+                   </button>
+                   <button 
+                     onClick={() => handleGenerateReport(selectedCaseData.id)}
+                     className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+                   >
+                     <Download className="h-4 w-4" />
+                     <span>Generate Report</span>
+                   </button>
+                   <button 
+                     onClick={() => handleStartAnalysis(selectedCaseData.id)}
+                     className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                   >
+                     <Play className="h-4 w-4" />
+                     <span>Start Analysis</span>
+                   </button>
+                 </div>
               </div>
             ) : (
               <div className="bg-white rounded-lg shadow-sm p-6 text-center text-gray-500">
@@ -433,9 +551,16 @@ const ForensicsLab: React.FC = () => {
         <div className="space-y-6">
           {selectedCaseData && (
             <div className="bg-white rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Evidence Collection - {selectedCaseData.name}</h3>
-              </div>
+               <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                 <h3 className="text-lg font-semibold text-gray-900">Evidence Collection - {selectedCaseData.name}</h3>
+                 <button 
+                   onClick={() => setShowNewEvidence(true)}
+                   className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                 >
+                   <Plus className="h-4 w-4" />
+                   <span>Add Evidence</span>
+                 </button>
+               </div>
               <div className="divide-y divide-gray-200">
                 {caseEvidence.map((evidenceItem) => (
                   <div key={evidenceItem.id} className="p-6">
@@ -476,15 +601,21 @@ const ForensicsLab: React.FC = () => {
                     </div>
                     
                     <div className="mt-4 flex space-x-2">
-                      <button className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
-                        <Eye className="h-3 w-3" />
-                        <span>Analyze</span>
-                      </button>
-                      <button className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors">
-                        <Download className="h-3 w-3" />
-                        <span>Export</span>
-                      </button>
-                    </div>
+                       <button 
+                         onClick={() => handleStartAnalysis(selectedCase!)}
+                         className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                       >
+                         <Eye className="h-3 w-3" />
+                         <span>Analyze</span>
+                       </button>
+                       <button 
+                         onClick={() => handleExportEvidence(evidenceItem.id)}
+                         className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                       >
+                         <Download className="h-3 w-3" />
+                         <span>Export</span>
+                       </button>
+                     </div>
                   </div>
                 ))}
               </div>
@@ -617,16 +748,165 @@ const ForensicsLab: React.FC = () => {
                   </div>
                 </div>
                 
-                <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                  <Download className="h-4 w-4" />
-                  <span>Download Report</span>
-                </button>
+                <button 
+                   onClick={() => handleGenerateReport(forensicCase.id)}
+                   className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                 >
+                   <Download className="h-4 w-4" />
+                   <span>Download Report</span>
+                 </button>
               </div>
             ))}
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* New Case Modal */}
+      {showNewCase && (
+       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+         <div className="bg-white rounded-lg p-6 w-full max-w-md">
+           <h3 className="text-lg font-semibold text-gray-900 mb-4">Create New Investigation</h3>
+           <form onSubmit={handleCreateCase}>
+             <div className="space-y-4">
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Case Name</label>
+                 <input
+                   type="text"
+                   value={newCaseForm.name}
+                   onChange={(e) => setNewCaseForm(prev => ({ ...prev, name: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   required
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                 <textarea
+                   value={newCaseForm.description}
+                   onChange={(e) => setNewCaseForm(prev => ({ ...prev, description: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   rows={3}
+                   required
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                 <select
+                   value={newCaseForm.priority}
+                   onChange={(e) => setNewCaseForm(prev => ({ ...prev, priority: e.target.value as any }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 >
+                   <option value="low">Low</option>
+                   <option value="medium">Medium</option>
+                   <option value="high">High</option>
+                   <option value="critical">Critical</option>
+                 </select>
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Lead Investigator</label>
+                 <input
+                   type="text"
+                   value={newCaseForm.investigator}
+                   onChange={(e) => setNewCaseForm(prev => ({ ...prev, investigator: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   required
+                 />
+               </div>
+             </div>
+             <div className="flex space-x-3 mt-6">
+               <button
+                 type="submit"
+                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+               >
+                 Create Case
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setShowNewCase(false)}
+                 className="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors"
+               >
+                 Cancel
+               </button>
+             </div>
+           </form>
+         </div>
+       </div>
+     )}
+
+     {/* New Evidence Modal */}
+     {showNewEvidence && selectedCase && (
+       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+         <div className="bg-white rounded-lg p-6 w-full max-w-md">
+           <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Evidence</h3>
+           <form onSubmit={handleCreateEvidence}>
+             <div className="space-y-4">
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Evidence Name</label>
+                 <input
+                   type="text"
+                   value={newEvidenceForm.name}
+                   onChange={(e) => setNewEvidenceForm(prev => ({ ...prev, name: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   required
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Evidence Type</label>
+                 <select
+                   value={newEvidenceForm.type}
+                   onChange={(e) => setNewEvidenceForm(prev => ({ ...prev, type: e.target.value as any }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 >
+                   <option value="disk_image">Disk Image</option>
+                   <option value="memory_dump">Memory Dump</option>
+                   <option value="network_capture">Network Capture</option>
+                   <option value="log_file">Log File</option>
+                   <option value="registry">Registry</option>
+                   <option value="file_system">File System</option>
+                 </select>
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+                 <input
+                   type="text"
+                   value={newEvidenceForm.source}
+                   onChange={(e) => setNewEvidenceForm(prev => ({ ...prev, source: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   required
+                 />
+               </div>
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Hash (SHA256)</label>
+                 <input
+                   type="text"
+                   value={newEvidenceForm.hash}
+                   onChange={(e) => setNewEvidenceForm(prev => ({ ...prev, hash: e.target.value }))}
+                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   placeholder="sha256:..."
+                   required
+                 />
+               </div>
+             </div>
+             <div className="flex space-x-3 mt-6">
+               <button
+                 type="submit"
+                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+               >
+                 Add Evidence
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setShowNewEvidence(false)}
+                 className="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors"
+               >
+                 Cancel
+               </button>
+             </div>
+           </form>
+         </div>
+       </div>
+     )}
+    </>
   )
 }
 

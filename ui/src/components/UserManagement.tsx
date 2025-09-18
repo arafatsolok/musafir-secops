@@ -1,72 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, 
-  UserPlus, 
   Shield, 
-  Key, 
+  Plus, 
   Search, 
+  Eye, 
   Edit, 
   Trash2, 
-  Eye, 
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Clock,
-  Lock,
-  UserCheck,
-  Activity
+  UserCheck, 
+  UserX, 
+  Key,
+  Clock
 } from 'lucide-react';
-
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  department: string;
-  status: 'active' | 'inactive' | 'locked' | 'pending';
-  lastLogin: string;
-  createdAt: string;
-  permissions: string[];
-  mfaEnabled: boolean;
-  phone?: string;
-  location?: string;
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
-  userCount: number;
-  isSystem: boolean;
-  createdAt: string;
-}
-
-interface Permission {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  isSystem: boolean;
-}
-
-interface AuditLog {
-  id: string;
-  userId: string;
-  username: string;
-  action: string;
-  resource: string;
-  timestamp: string;
-  ipAddress: string;
-  userAgent: string;
-  status: 'success' | 'failed';
-}
+import { userService, UserProfile, Role, Permission, AuditLog, CreateUserRequest, CreateRoleRequest } from '../services';
 
 const UserManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'permissions' | 'audit'>('users');
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -74,8 +24,63 @@ const UserManagement: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [showNewUser, setShowNewUser] = useState(false);
+  const [showNewRole, setShowNewRole] = useState(false);
+
+  const [newUserData, setNewUserData] = useState({
+    username: '',
+    email: '',
+    firstName: '',
+    lastName: '',
+    role: '',
+    department: '',
+    password: '',
+    phone: '',
+    location: ''
+  });
+  const [newRoleData, setNewRoleData] = useState({
+    name: '',
+    description: '',
+    permissions: [] as string[]
+  });
+  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    loadData();
+  }, []);
+
+  // Clear form errors when modals are closed
+  useEffect(() => {
+    if (!showNewUser && !showNewRole) {
+      setFormErrors({});
+    }
+  }, [showNewUser, showNewRole]);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      const [usersData, rolesData, permissionsData, auditData] = await Promise.all([
+        userService.getUsers(),
+        userService.getRoles(),
+        userService.getPermissions(),
+        userService.getAuditLogs()
+      ]);
+      
+      setUsers(usersData.data || []);
+      setRoles(rolesData.data || []);
+      setPermissions(permissionsData.data || []);
+      setAuditLogs(auditData.data || []);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      // Fallback to demo data
+      loadDemoData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadDemoData = () => {
     // Simulate loading data
     setTimeout(() => {
       setUsers([
@@ -235,7 +240,142 @@ const UserManagement: React.FC = () => {
 
       setIsLoading(false);
     }, 1000);
-  }, []);
+  };
+
+  const validateUserForm = (userData: typeof newUserData) => {
+    const errors: {[key: string]: string} = {};
+    
+    if (!userData.username.trim()) {
+      errors.username = 'Username is required';
+    } else if (userData.username.length < 3) {
+      errors.username = 'Username must be at least 3 characters';
+    }
+    
+    if (!userData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (!userData.firstName.trim()) {
+      errors.firstName = 'First name is required';
+    }
+    
+    if (!userData.lastName.trim()) {
+      errors.lastName = 'Last name is required';
+    }
+    
+    if (!userData.password.trim()) {
+      errors.password = 'Password is required';
+    } else if (userData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
+    }
+    
+    if (!userData.role.trim()) {
+      errors.role = 'Role is required';
+    }
+    
+    if (!userData.department.trim()) {
+      errors.department = 'Department is required';
+    }
+    
+    return errors;
+  };
+
+  const validateRoleForm = (roleData: typeof newRoleData) => {
+    const errors: {[key: string]: string} = {};
+    
+    if (!roleData.name.trim()) {
+      errors.name = 'Role name is required';
+    } else if (roleData.name.length < 2) {
+      errors.name = 'Role name must be at least 2 characters';
+    }
+    
+    if (!roleData.description.trim()) {
+      errors.description = 'Description is required';
+    } else if (roleData.description.length < 10) {
+      errors.description = 'Description must be at least 10 characters';
+    }
+    
+    return errors;
+  };
+
+  const handleCreateUser = async () => {
+    const errors = validateUserForm(newUserData);
+    setFormErrors(errors);
+    
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const response = await userService.createUser(newUserData as CreateUserRequest);
+      if (response.data) {
+        setUsers(prev => [...prev, response.data!]);
+      }
+      setShowNewUser(false);
+      setNewUserData({
+        username: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        role: '',
+        department: '',
+        password: '',
+        phone: '',
+        location: ''
+      });
+      setFormErrors({});
+      alert('User created successfully!');
+    } catch (error) {
+      console.error('Error creating user:', error);
+      alert('Failed to create user. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await userService.deleteUser(userId);
+      setUsers(prev => prev.filter(user => user.id !== userId));
+    } catch (error) {
+      console.error('Error deleting user:', error);
+    }
+  };
+
+  const handleCreateRole = async () => {
+    const errors = validateRoleForm(newRoleData);
+    setFormErrors(errors);
+    
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const response = await userService.createRole(newRoleData as CreateRoleRequest);
+      if (response.data) {
+        setRoles(prev => [...prev, response.data!]);
+      }
+      setShowNewRole(false);
+      setNewRoleData({
+        name: '',
+        description: '',
+        permissions: []
+      });
+      setFormErrors({});
+      alert('Role created successfully!');
+    } catch (error) {
+      console.error('Error creating role:', error);
+      alert('Failed to create role. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -249,11 +389,11 @@ const UserManagement: React.FC = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'active': return <CheckCircle className="w-4 h-4 text-green-500" />;
-      case 'inactive': return <XCircle className="w-4 h-4 text-gray-500" />;
-      case 'locked': return <Lock className="w-4 h-4 text-red-500" />;
+      case 'active': return <UserCheck className="w-4 h-4 text-green-500" />;
+      case 'inactive': return <UserX className="w-4 h-4 text-gray-500" />;
+      case 'locked': return <UserX className="w-4 h-4 text-red-500" />;
       case 'pending': return <Clock className="w-4 h-4 text-yellow-500" />;
-      default: return <AlertCircle className="w-4 h-4 text-gray-500" />;
+      default: return <UserX className="w-4 h-4 text-gray-500" />;
     }
   };
 
@@ -331,7 +471,7 @@ const UserManagement: React.FC = () => {
                 { id: 'users', name: 'Users', icon: Users },
                 { id: 'roles', name: 'Roles', icon: Shield },
                 { id: 'permissions', name: 'Permissions', icon: Key },
-                { id: 'audit', name: 'Audit Log', icon: Activity }
+                { id: 'audit', name: 'Audit Log', icon: Clock }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -388,9 +528,10 @@ const UserManagement: React.FC = () => {
                     </select>
                   </div>
                   <button 
+                    onClick={() => setShowNewUser(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
-                    <UserPlus className="w-4 h-4" />
+                    <Plus className="w-4 h-4" />
                     <span>Add User</span>
                   </button>
                 </div>
@@ -438,13 +579,13 @@ const UserManagement: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {new Date(user.lastLogin).toLocaleDateString()}
+                            {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {user.mfaEnabled ? (
-                              <CheckCircle className="w-5 h-5 text-green-500" />
+                              <UserCheck className="w-5 h-5 text-green-500" />
                             ) : (
-                              <XCircle className="w-5 h-5 text-red-500" />
+                              <UserX className="w-5 h-5 text-red-500" />
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -454,10 +595,15 @@ const UserManagement: React.FC = () => {
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
-                              <button className="text-gray-600 hover:text-gray-900">
+                              <button 
+                                className="text-gray-600 hover:text-gray-900"
+                              >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              <button className="text-red-600 hover:text-red-900">
+                              <button 
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="text-red-600 hover:text-red-900"
+                              >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
@@ -475,6 +621,7 @@ const UserManagement: React.FC = () => {
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold text-gray-900">Role Management</h3>
                   <button 
+                    onClick={() => setShowNewRole(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     <Shield className="w-4 h-4" />
@@ -514,7 +661,9 @@ const UserManagement: React.FC = () => {
                           View Details
                         </button>
                         {!role.isSystem && (
-                          <button className="px-3 py-2 text-sm bg-gray-50 text-gray-600 rounded hover:bg-gray-100">
+                          <button 
+                            className="px-3 py-2 text-sm bg-gray-50 text-gray-600 rounded hover:bg-gray-100"
+                          >
                             Edit
                           </button>
                         )}
@@ -596,6 +745,211 @@ const UserManagement: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* New User Modal */}
+        {showNewUser && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">Add New User</h3>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateUser();
+              }}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Username</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newUserData.username}
+                      onChange={(e) => setNewUserData({...newUserData, username: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.username ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.username && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.username}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input 
+                      type="email" 
+                      required 
+                      value={newUserData.email}
+                      onChange={(e) => setNewUserData({...newUserData, email: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.email ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.email && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">First Name</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newUserData.firstName}
+                      onChange={(e) => setNewUserData({...newUserData, firstName: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.firstName ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.firstName && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.firstName}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newUserData.lastName}
+                      onChange={(e) => setNewUserData({...newUserData, lastName: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.lastName ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.lastName && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.lastName}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Password</label>
+                    <input 
+                      type="password" 
+                      required 
+                      value={newUserData.password}
+                      onChange={(e) => setNewUserData({...newUserData, password: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.password ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.password && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Role</label>
+                    <select 
+                      required 
+                      value={newUserData.role}
+                      onChange={(e) => setNewUserData({...newUserData, role: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.role ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Select Role</option>
+                      {roles.map(role => (
+                        <option key={role.id} value={role.name}>{role.name}</option>
+                      ))}
+                    </select>
+                    {formErrors.role && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.role}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Department</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newUserData.department}
+                      onChange={(e) => setNewUserData({...newUserData, department: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.department ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.department && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.department}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewUser(false)}
+                    className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Creating...' : 'Create User'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* New Role Modal */}
+        {showNewRole && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">Create New Role</h3>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateRole();
+              }}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Role Name</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={newRoleData.name}
+                      onChange={(e) => setNewRoleData({...newRoleData, name: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.name ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.name && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea 
+                      required 
+                      value={newRoleData.description}
+                      onChange={(e) => setNewRoleData({...newRoleData, description: e.target.value})}
+                      className={`mt-1 block w-full border rounded-md px-3 py-2 ${
+                        formErrors.description ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      rows={3}
+                    />
+                    {formErrors.description && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.description}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewRole(false)}
+                    className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Creating...' : 'Create Role'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

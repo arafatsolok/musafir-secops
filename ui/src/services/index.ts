@@ -1,11 +1,13 @@
 // Export all services
-export { authService, AuthService } from './auth';
-export { incidentService, IncidentService } from './incidents';
-export { alertService, AlertService } from './alerts';
-export { assetService, AssetService } from './assets';
-export { vulnerabilityService, VulnerabilityService } from './vulnerabilities';
-export { dashboardService, DashboardService } from './dashboard';
-export { apiClient, ApiClient } from './api';
+export { authService } from './auth';
+export { incidentService } from './incidents';
+export { alertService } from './alerts';
+export { assetService } from './assets';
+export { vulnerabilityService } from './vulnerabilities';
+export { dashboardService } from './dashboard';
+export { forensicsService } from './forensics';
+export { userService } from './users';
 
-// Export types
+// Re-export types
 export * from '../types/api';
+export type { User as UserProfile, Role, Permission, AuditLog, CreateUserRequest, UpdateUserRequest, CreateRoleRequest, UpdateRoleRequest } from './users';

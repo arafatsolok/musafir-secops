@@ -368,3 +368,8 @@ func (td *ThreatDetector) GetIOCs() []IOCIndicator {
 func (td *ThreatDetector) GetBehaviorRules() []BehaviorRule {
 	return td.behaviorRules
 }
+
+// GetAlertChannel returns the alert channel for forwarding threats
+func (td *ThreatDetector) GetAlertChannel() <-chan ThreatAlert {
+	return td.alertChannel
+}

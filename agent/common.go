@@ -32,15 +32,20 @@ const (
 )
 
 // Common functionality shared across all platforms
-func sendEventToGateway(gatewayURL string, data []byte) {
+func sendEventToController(controllerURL string, data []byte) {
 	client := buildHTTPClient()
-	if err := postWithRetry(client, gatewayURL+"/v1/events", data); err != nil {
+	if err := postWithRetry(client, controllerURL+"/v1/events", data); err != nil {
 		persistToDiskQueue(data)
 		log.Printf("post failed; queued to disk: %v", err)
 	}
 
 	// Attempt draining any queued payloads opportunistically
-	drainDiskQueue(client, gatewayURL+"/v1/events")
+	drainDiskQueue(client, controllerURL+"/v1/events")
+}
+
+// Legacy function name for backward compatibility
+func sendEventToGateway(gatewayURL string, data []byte) {
+	sendEventToController(gatewayURL, data)
 }
 
 func buildHTTPClient() *http.Client {
@@ -94,22 +99,35 @@ func postWithRetry(client *http.Client, url string, data []byte) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		
-		// Add timestamp for HMAC validation
-		ts := time.Now().UTC().Format(time.RFC3339)
-		req.Header.Set("X-Timestamp", ts)
+		// Add Agent ID and HMAC signature headers for controller authentication
+		agentID := strings.TrimSpace(os.Getenv("AGENT_ID"))
+		agentHMAC := strings.TrimSpace(os.Getenv("AGENT_HMAC"))
 		
-		// HMAC signing with timestamp
-		secret := strings.TrimSpace(os.Getenv("AGENT_HMAC_SECRET"))
-		if secret == "" {
-			secret = "default-hmac-secret-for-demo" // Default for demo purposes
+		if agentID != "" && agentHMAC != "" {
+			req.Header.Set("X-Agent-ID", agentID)
+			
+			// Create HMAC signature of the request body
+			mac := hmac.New(sha256.New, []byte(agentHMAC))
+			mac.Write(data)
+			signature := hex.EncodeToString(mac.Sum(nil))
+			req.Header.Set("X-HMAC-Signature", signature)
+		} else {
+			// Fallback to legacy timestamp-based HMAC for backward compatibility
+			ts := time.Now().UTC().Format(time.RFC3339)
+			req.Header.Set("X-Timestamp", ts)
+			
+			secret := strings.TrimSpace(os.Getenv("AGENT_HMAC_SECRET"))
+			if secret == "" {
+				secret = "default-hmac-secret-for-demo" // Default for demo purposes
+			}
+			
+			// Create HMAC with timestamp + body
+			mac := hmac.New(sha256.New, []byte(secret))
+			mac.Write([]byte(ts))
+			mac.Write(data)
+			sign := hex.EncodeToString(mac.Sum(nil))
+			req.Header.Set("X-Signature", "sha256="+sign)
 		}
-		
-		// Create HMAC with timestamp + body
-		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write([]byte(ts))
-		mac.Write(data)
-		sign := hex.EncodeToString(mac.Sum(nil))
-		req.Header.Set("X-Signature", "sha256="+sign)
 
 		resp, err := client.Do(req)
 		if err != nil {

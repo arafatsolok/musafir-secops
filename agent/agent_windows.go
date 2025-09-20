@@ -16,17 +16,22 @@ import (
 
 // Global monitoring instances
 var (
-	telemetryCollector *WindowsTelemetryCollector
-	processMonitor     *ProcessMonitor
-	networkMonitor     *NetworkMonitor
-	fileMonitor        *FileMonitor
-	registryMonitor    *RegistryMonitor
-	threatDetector     *ThreatDetector
-	queryEngine        *QueryEngine
-	assetInventory     *AssetInventory
-	complianceMonitor  *ComplianceMonitor
-	uebaAnalytics      *UEBAAnalytics
-	forensicsCollector *ForensicsCollector
+	telemetryCollector     *WindowsTelemetryCollector
+	processMonitor         *ProcessMonitor
+	networkMonitor         *NetworkMonitor
+	fileMonitor            *FileMonitor
+	registryMonitor        *RegistryMonitor
+	threatDetector         *ThreatDetector
+	queryEngine            *QueryEngine
+	assetInventory         *AssetInventory
+	complianceMonitor      *ComplianceMonitor
+	uebaAnalytics          *UEBAAnalytics
+	forensicsCollector     *ForensicsCollector
+	// Network infrastructure monitoring components
+	snmpClient             *SNMPClient
+	networkScanner         *NetworkScanner
+	syslogReceiver         *SyslogReceiver
+	configurationMonitor   *ConfigurationMonitor
 )
 
 // Windows-specific agent capabilities
@@ -38,23 +43,28 @@ func init() {
 func generateEnhancedWindowsEvent() Envelope {
 	hostname, _ := os.Hostname()
 	
+	// Define gatewayURL
+	gatewayURL := os.Getenv("GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://localhost:8080"
+	}
+	
 	// Collect comprehensive system information
 	systemInfo, err := telemetryCollector.CollectSystemInfo()
 	if err != nil {
 		log.Printf("Error collecting system info: %v", err)
 		return Envelope{}
 	}
-	
+
 	return Envelope{
-		Ts:       time.Now().UTC().Format(time.RFC3339),
 		TenantID: "t-aci",
 		Asset: map[string]string{
 			"id":       hostname,
 			"type":     "endpoint",
 			"os":       "windows",
-			"version":  systemInfo.OS.Version,
-			"arch":     systemInfo.OS.Architecture,
-			"domain":   systemInfo.Domain,
+			"os_name":         systemInfo.OS.Name,
+			"os_version":      systemInfo.OS.Version,
+			"domain":          systemInfo.Domain,
 			"ip":       getLocalIP(),
 		},
 		User: map[string]string{
@@ -78,8 +88,6 @@ func generateEnhancedWindowsEvent() Envelope {
 		Ingest: map[string]string{
 			"agent_version": "1.0.0-enhanced",
 			"schema":        "ocsf:1.2",
-			"platform":      "windows",
-			"capabilities":  "edr,xdr,siem",
 		},
 	}
 }
@@ -139,13 +147,25 @@ func initializeMonitoring() error {
 	// Initialize forensics collector
 	forensicsCollector = NewForensicsCollector("default-collection", "./forensics")
 	
+	// Initialize network infrastructure monitoring components
+	snmpClient = NewSNMPClient()
+	networkScanner = NewNetworkScanner()
+	syslogReceiver = NewSyslogReceiver(514)
+	configurationMonitor = NewConfigurationMonitor(snmpClient)
+	
 	log.Println("All monitoring and analysis modules initialized successfully")
 	return nil
 }
 
 // Start all monitoring services
-func startMonitoring(gatewayURL string) {
+func startMonitoring(controllerURL string) {
 	log.Println("Starting comprehensive Windows monitoring...")
+	
+	// Define gatewayURL
+	gatewayURL := os.Getenv("GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://localhost:8080"
+	}
 	
 	// Start process monitoring
 	go func() {
@@ -269,15 +289,10 @@ func startMonitoring(gatewayURL string) {
 		}()
 	}()
 	
-	// Start threat detection with enhanced forwarding
-	if threatDetector != nil {
-		alertChannel := make(chan ThreatAlert, 100)
-		go forwardThreatAlerts(alertChannel, gatewayURL)
-		
-		// ThreatDetector doesn't have Start method, it's always running
-		log.Println("Threat detection initialized successfully")
-	}
-
+	// Start enhanced event forwarders
+	alertChannel := threatDetector.GetAlertChannel()
+	go forwardThreatAlerts(alertChannel, controllerURL)
+	
 	// Start asset discovery with enhanced forwarding
 	if assetInventory != nil {
 		go func() {
@@ -287,7 +302,7 @@ func startMonitoring(gatewayURL string) {
 				log.Println("Asset discovery started successfully")
 			}
 		}()
-		go forwardAssetUpdates(assetInventory, gatewayURL)
+		go forwardAssetUpdates(assetInventory, controllerURL)
 	}
 
 	// Start compliance monitoring with enhanced forwarding
@@ -299,24 +314,59 @@ func startMonitoring(gatewayURL string) {
 				log.Println("Compliance monitoring started successfully")
 			}
 		}()
-		go forwardComplianceReports(complianceMonitor, gatewayURL)
+		go forwardComplianceReports(complianceMonitor, controllerURL)
 	}
 
 	// Start UEBA analytics with enhanced forwarding
 	if uebaAnalytics != nil {
 		// UEBA analytics is always running and processes events as they come
 		log.Println("UEBA analytics initialized successfully")
-		go forwardUEBAAnomalies(uebaAnalytics, gatewayURL)
+		go forwardUEBAAnomalies(uebaAnalytics, controllerURL)
 	}
 
 	// Start forensics data forwarding
 	if forensicsCollector != nil {
-		go forwardForensicsData(forensicsCollector, gatewayURL)
+		go forwardForensicsData(forensicsCollector, controllerURL)
 	}
 
 	// Start query results forwarding
 	if queryEngine != nil {
-		go forwardQueryResults(queryEngine, gatewayURL)
+		go forwardQueryResults(queryEngine, controllerURL)
+	}
+	
+	// Start network infrastructure monitoring components
+	if snmpClient != nil {
+		log.Println("SNMP client initialized and ready for device queries")
+	}
+	
+	if networkScanner != nil {
+		go func() {
+			if err := networkScanner.Start(); err != nil {
+				log.Printf("Network scanner error: %v", err)
+			} else {
+				log.Println("Network scanner started successfully")
+			}
+		}()
+	}
+	
+	if syslogReceiver != nil {
+		go func() {
+			if err := syslogReceiver.Start(); err != nil {
+				log.Printf("Syslog receiver error: %v", err)
+			} else {
+				log.Println("Syslog receiver started successfully")
+			}
+		}()
+	}
+	
+	if configurationMonitor != nil {
+		go func() {
+			if err := configurationMonitor.Start(); err != nil {
+				log.Printf("Configuration monitor error: %v", err)
+			} else {
+				log.Println("Configuration monitor started successfully")
+			}
+		}()
 	}
 	
 	// Start ransomware canary monitoring
@@ -354,11 +404,34 @@ func stopMonitoring() {
 		log.Println("ComplianceMonitor shutdown (no explicit stop method)")
 	}
 	
+	// Stop network infrastructure monitoring components
+	if networkScanner != nil {
+		networkScanner.Stop()
+		log.Println("Network scanner stopped")
+	}
+	if syslogReceiver != nil {
+		syslogReceiver.Stop()
+		log.Println("Syslog receiver stopped")
+	}
+	if configurationMonitor != nil {
+		configurationMonitor.Stop()
+		log.Println("Configuration monitor stopped")
+	}
+	if snmpClient != nil {
+		// SNMP client doesn't need explicit stopping
+		log.Println("SNMP client shutdown")
+	}
+	
 	log.Println("All monitoring and analysis services stopped")
 }
 
 // Send periodic heartbeat with system status
-func sendHeartbeat(gatewayURL string, interval time.Duration) {
+func sendHeartbeat(interval time.Duration) {
+	gatewayURL := os.Getenv("GATEWAY_URL")
+	if gatewayURL == "" {
+		gatewayURL = "http://localhost:8080"
+	}
+	
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	
@@ -376,13 +449,13 @@ func sendHeartbeat(gatewayURL string, interval time.Duration) {
 }
 
 func main() {
-	gatewayURL := os.Getenv("GATEWAY_URL")
-	if gatewayURL == "" {
-		gatewayURL = "http://localhost:8080"
+	controllerURL := os.Getenv("CONTROLLER_URL")
+	if controllerURL == "" {
+		controllerURL = "http://localhost:8080"
 	}
 	
 	log.Printf("MUSAFIR Enhanced EDR/XDR/SIEM Agent starting...")
-	log.Printf("Gateway URL: %s", gatewayURL)
+	log.Printf("Controller URL: %s", controllerURL)
 	
 	// Initialize all monitoring components
 	if err := initializeMonitoring(); err != nil {
@@ -390,16 +463,16 @@ func main() {
 	}
 	
 	// Start all monitoring services
-	startMonitoring(gatewayURL)
+	startMonitoring(controllerURL)
 	
 	// Send initial enhanced event
 	evt := generateEnhancedWindowsEvent()
 	data, _ := json.Marshal(evt)
 	log.Printf("Sending initial enhanced telemetry event")
-	sendEventToGateway(gatewayURL, data)
+	sendEventToController(controllerURL, data)
 	
 	// Start periodic heartbeat (every 30 seconds)
-	go sendHeartbeat(gatewayURL, 30*time.Second)
+	go sendHeartbeat(30*time.Second)
 	
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

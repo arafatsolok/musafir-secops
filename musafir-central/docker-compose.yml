@@ -1,0 +1,329 @@
+version: '3.8'
+
+services:
+  # Message Queue
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    hostname: zookeeper
+    container_name: musafir-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - musafir-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    hostname: kafka
+    container_name: musafir-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - musafir-network
+
+  # Document Database
+  mongodb:
+    image: mongo:7.0
+    container_name: musafir-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: musafir
+      MONGO_INITDB_ROOT_PASSWORD: musafir123
+      MONGO_INITDB_DATABASE: musafir
+    volumes:
+      - mongodb-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - musafir-network
+
+  # Time Series Database
+  influxdb:
+    image: influxdb:2.7
+    container_name: musafir-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: musafir
+      DOCKER_INFLUXDB_INIT_PASSWORD: musafir123
+      DOCKER_INFLUXDB_INIT_ORG: musafir-org
+      DOCKER_INFLUXDB_INIT_BUCKET: events
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: musafir-super-secret-auth-token
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    networks:
+      - musafir-network
+
+  # Cache Database
+  redis:
+    image: redis:7.2-alpine
+    container_name: musafir-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass musafir123
+    volumes:
+      - redis-data:/data
+    networks:
+      - musafir-network
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: musafir-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./deployments/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - musafir-network
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: musafir-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: musafir123
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deployments/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./deployments/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - musafir-network
+
+  # Security Vault
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: musafir-vault
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: musafir-vault-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault-data:/vault/data
+    networks:
+      - musafir-network
+
+  # Elasticsearch for logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    container_name: musafir-elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      xpack.security.enabled: false
+      xpack.security.enrollment.enabled: false
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - musafir-network
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.0
+    container_name: musafir-kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - musafir-network
+
+  # NGINX for reverse proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: musafir-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployments/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deployments/nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - api-gateway
+      - frontend
+    networks:
+      - musafir-network
+
+  # Backend Services
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: cmd/api-gateway/Dockerfile
+    container_name: musafir-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGODB_URI=mongodb://musafir:musafir123@mongodb:27017/musafir?authSource=admin
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=musafir-super-secret-auth-token
+      - INFLUXDB_ORG=musafir-org
+      - INFLUXDB_BUCKET=events
+      - REDIS_URL=redis://:musafir123@redis:6379/0
+      - KAFKA_BROKERS=kafka:29092
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=musafir-vault-token
+      - JWT_SECRET=musafir-jwt-super-secret-key
+      - LOG_LEVEL=debug
+    depends_on:
+      - mongodb
+      - influxdb
+      - redis
+      - kafka
+      - vault
+    networks:
+      - musafir-network
+
+  event-processor:
+    build:
+      context: ./backend
+      dockerfile: cmd/event-processor/Dockerfile
+    container_name: musafir-event-processor
+    restart: unless-stopped
+    environment:
+      - MONGODB_URI=mongodb://musafir:musafir123@mongodb:27017/musafir?authSource=admin
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=musafir-super-secret-auth-token
+      - INFLUXDB_ORG=musafir-org
+      - INFLUXDB_BUCKET=events
+      - KAFKA_BROKERS=kafka:29092
+      - LOG_LEVEL=debug
+    depends_on:
+      - mongodb
+      - influxdb
+      - kafka
+    networks:
+      - musafir-network
+
+  analytics-engine:
+    build:
+      context: ./backend
+      dockerfile: cmd/analytics-engine/Dockerfile
+    container_name: musafir-analytics-engine
+    restart: unless-stopped
+    environment:
+      - MONGODB_URI=mongodb://musafir:musafir123@mongodb:27017/musafir?authSource=admin
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=musafir-super-secret-auth-token
+      - INFLUXDB_ORG=musafir-org
+      - INFLUXDB_BUCKET=events
+      - REDIS_URL=redis://:musafir123@redis:6379/0
+      - KAFKA_BROKERS=kafka:29092
+      - LOG_LEVEL=debug
+    depends_on:
+      - mongodb
+      - influxdb
+      - redis
+      - kafka
+    networks:
+      - musafir-network
+
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: cmd/notification-service/Dockerfile
+    container_name: musafir-notification-service
+    restart: unless-stopped
+    environment:
+      - MONGODB_URI=mongodb://musafir:musafir123@mongodb:27017/musafir?authSource=admin
+      - REDIS_URL=redis://:musafir123@redis:6379/0
+      - KAFKA_BROKERS=kafka:29092
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=your-email@gmail.com
+      - SMTP_PASSWORD=your-app-password
+      - LOG_LEVEL=debug
+    depends_on:
+      - mongodb
+      - redis
+      - kafka
+    networks:
+      - musafir-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: musafir-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_WS_URL=ws://localhost:8080/ws
+    depends_on:
+      - api-gateway
+    networks:
+      - musafir-network
+
+volumes:
+  mongodb-data:
+  influxdb-data:
+  influxdb-config:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-logs:
+  prometheus-data:
+  grafana-data:
+  vault-data:
+  elasticsearch-data:
+  nginx-logs:
+
+networks:
+  musafir-network:
+    driver: bridge

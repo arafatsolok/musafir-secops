@@ -253,7 +253,7 @@ func (sr *SyslogReceiver) parseSyslogMessage(rawMessage, sourceAddr string) *Sys
 	// Parse RFC3164 format: <priority>timestamp hostname tag: content
 	re := regexp.MustCompile(`^<(\d+)>(.*)`)
 	matches := re.FindStringSubmatch(rawMessage)
-	
+
 	if len(matches) < 3 {
 		// No priority found, treat as plain message
 		message.Content = rawMessage
@@ -274,7 +274,7 @@ func (sr *SyslogReceiver) parseSyslogMessage(rawMessage, sourceAddr string) *Sys
 
 	// Parse the rest of the message
 	rest := matches[2]
-	
+
 	// Try to parse timestamp
 	timestampFormats := []string{
 		"Jan 2 15:04:05",
@@ -314,7 +314,7 @@ func (sr *SyslogReceiver) parseSyslogMessage(rawMessage, sourceAddr string) *Sys
 	parts := strings.Fields(remainingMessage)
 	if len(parts) > 0 {
 		message.Hostname = parts[0]
-		
+
 		if len(parts) > 1 {
 			// Look for tag (usually ends with :)
 			for i, part := range parts[1:] {
@@ -326,7 +326,7 @@ func (sr *SyslogReceiver) parseSyslogMessage(rawMessage, sourceAddr string) *Sys
 					break
 				}
 			}
-			
+
 			// If no tag found, treat everything after hostname as content
 			if message.Tag == "" {
 				message.Content = strings.Join(parts[1:], " ")
@@ -382,12 +382,12 @@ func (sr *SyslogReceiver) generateSyslogEvent(message *SyslogMessage) {
 				"facility":      message.Facility,
 				"severity":      message.Severity,
 				"priority":      message.Priority,
-				"tag":          message.Tag,
-				"content":      message.Content,
-				"raw_message":  message.RawMessage,
-				"device_type":  message.DeviceType,
-				"vendor":       message.Vendor,
-				"event_type":   message.EventType,
+				"tag":           message.Tag,
+				"content":       message.Content,
+				"raw_message":   message.RawMessage,
+				"device_type":   message.DeviceType,
+				"vendor":        message.Vendor,
+				"event_type":    message.EventType,
 				"parsed_fields": message.ParsedFields,
 			},
 		},
@@ -410,15 +410,17 @@ func (sr *SyslogReceiver) generateSyslogEvent(message *SyslogMessage) {
 type CiscoParser struct{}
 
 func (p *CiscoParser) GetVendor() string { return "Cisco" }
-func (p *CiscoParser) GetDeviceTypes() []string { return []string{"router", "switch", "firewall", "asa"} }
+func (p *CiscoParser) GetDeviceTypes() []string {
+	return []string{"router", "switch", "firewall", "asa"}
+}
 
 func (p *CiscoParser) CanParse(message *SyslogMessage) bool {
 	content := strings.ToLower(message.Content)
 	hostname := strings.ToLower(message.Hostname)
-	
+
 	// Check for Cisco-specific patterns
 	ciscoPatterns := []string{
-		"%", // Cisco messages often start with %
+		"%",                     // Cisco messages often start with %
 		"asa-", "pix-", "fwsm-", // ASA/PIX patterns
 		"sec-", "sys-", "link-", // Common Cisco facility codes
 	}
@@ -434,17 +436,17 @@ func (p *CiscoParser) CanParse(message *SyslogMessage) bool {
 
 func (p *CiscoParser) Parse(message *SyslogMessage) error {
 	content := message.Content
-	
+
 	// Parse Cisco message format: %FACILITY-SEVERITY-MNEMONIC: description
 	re := regexp.MustCompile(`%([A-Z_]+)-(\d+)-([A-Z_]+):\s*(.*)`)
 	matches := re.FindStringSubmatch(content)
-	
+
 	if len(matches) == 5 {
 		message.ParsedFields["facility_code"] = matches[1]
 		message.ParsedFields["cisco_severity"] = matches[2]
 		message.ParsedFields["mnemonic"] = matches[3]
 		message.ParsedFields["description"] = matches[4]
-		
+
 		// Determine device type based on facility
 		facility := strings.ToLower(matches[1])
 		if strings.Contains(facility, "asa") || strings.Contains(facility, "pix") {
@@ -452,7 +454,7 @@ func (p *CiscoParser) Parse(message *SyslogMessage) error {
 		} else if strings.Contains(facility, "sys") || strings.Contains(facility, "link") {
 			message.DeviceType = "router"
 		}
-		
+
 		// Determine event type
 		mnemonic := strings.ToLower(matches[3])
 		if strings.Contains(mnemonic, "up") || strings.Contains(mnemonic, "down") {
@@ -471,12 +473,14 @@ func (p *CiscoParser) Parse(message *SyslogMessage) error {
 type JuniperParser struct{}
 
 func (p *JuniperParser) GetVendor() string { return "Juniper" }
-func (p *JuniperParser) GetDeviceTypes() []string { return []string{"router", "switch", "firewall", "srx"} }
+func (p *JuniperParser) GetDeviceTypes() []string {
+	return []string{"router", "switch", "firewall", "srx"}
+}
 
 func (p *JuniperParser) CanParse(message *SyslogMessage) bool {
 	content := strings.ToLower(message.Content)
 	hostname := strings.ToLower(message.Hostname)
-	
+
 	juniperPatterns := []string{
 		"junos", "srx", "mx", "ex", "qfx",
 		"rpd", "chassisd", "mgd",
@@ -495,18 +499,19 @@ func (p *JuniperParser) Parse(message *SyslogMessage) error {
 	// Juniper format: process[pid]: message
 	re := regexp.MustCompile(`(\w+)\[(\d+)\]:\s*(.*)`)
 	matches := re.FindStringSubmatch(message.Content)
-	
+
 	if len(matches) == 4 {
 		message.ParsedFields["process"] = matches[1]
 		message.ParsedFields["pid"] = matches[2]
 		message.ParsedFields["description"] = matches[3]
-		
+
 		process := strings.ToLower(matches[1])
-		if process == "rpd" {
+		switch process {
+		case "rpd":
 			message.EventType = "routing"
-		} else if process == "mgd" {
+		case "mgd":
 			message.EventType = "management"
-		} else if process == "chassisd" {
+		case "chassisd":
 			message.EventType = "hardware"
 		}
 	}
@@ -517,12 +522,12 @@ func (p *JuniperParser) Parse(message *SyslogMessage) error {
 // PaloAltoParser parses Palo Alto Networks messages
 type PaloAltoParser struct{}
 
-func (p *PaloAltoParser) GetVendor() string { return "Palo Alto Networks" }
+func (p *PaloAltoParser) GetVendor() string        { return "Palo Alto Networks" }
 func (p *PaloAltoParser) GetDeviceTypes() []string { return []string{"firewall", "panorama"} }
 
 func (p *PaloAltoParser) CanParse(message *SyslogMessage) bool {
 	content := strings.ToLower(message.Content)
-	
+
 	paloPatterns := []string{
 		"traffic", "threat", "config", "system",
 		"panorama", "pa-", "globalprotect",
@@ -539,7 +544,7 @@ func (p *PaloAltoParser) CanParse(message *SyslogMessage) bool {
 
 func (p *PaloAltoParser) Parse(message *SyslogMessage) error {
 	message.DeviceType = "firewall"
-	
+
 	content := strings.ToLower(message.Content)
 	if strings.Contains(content, "traffic") {
 		message.EventType = "traffic"
@@ -557,12 +562,12 @@ func (p *PaloAltoParser) Parse(message *SyslogMessage) error {
 // FortinetParser parses Fortinet messages
 type FortinetParser struct{}
 
-func (p *FortinetParser) GetVendor() string { return "Fortinet" }
+func (p *FortinetParser) GetVendor() string        { return "Fortinet" }
 func (p *FortinetParser) GetDeviceTypes() []string { return []string{"firewall", "fortigate"} }
 
 func (p *FortinetParser) CanParse(message *SyslogMessage) bool {
 	content := strings.ToLower(message.Content)
-	
+
 	fortiPatterns := []string{
 		"fortigate", "fortios", "fortimanager",
 		"logid=", "type=", "subtype=",
@@ -579,11 +584,11 @@ func (p *FortinetParser) CanParse(message *SyslogMessage) bool {
 
 func (p *FortinetParser) Parse(message *SyslogMessage) error {
 	message.DeviceType = "firewall"
-	
+
 	// Parse key-value pairs
 	re := regexp.MustCompile(`(\w+)=([^\s]+)`)
 	matches := re.FindAllStringSubmatch(message.Content, -1)
-	
+
 	for _, match := range matches {
 		if len(match) == 3 {
 			key := match[1]
@@ -591,7 +596,7 @@ func (p *FortinetParser) Parse(message *SyslogMessage) error {
 			message.ParsedFields[key] = value
 		}
 	}
-	
+
 	// Determine event type
 	if logType, exists := message.ParsedFields["type"]; exists {
 		message.EventType = logType
@@ -603,7 +608,7 @@ func (p *FortinetParser) Parse(message *SyslogMessage) error {
 // GenericParser is a fallback parser
 type GenericParser struct{}
 
-func (p *GenericParser) GetVendor() string { return "Generic" }
+func (p *GenericParser) GetVendor() string        { return "Generic" }
 func (p *GenericParser) GetDeviceTypes() []string { return []string{"network_device"} }
 
 func (p *GenericParser) CanParse(message *SyslogMessage) bool {
@@ -613,7 +618,7 @@ func (p *GenericParser) CanParse(message *SyslogMessage) bool {
 func (p *GenericParser) Parse(message *SyslogMessage) error {
 	// Basic parsing for generic devices
 	content := strings.ToLower(message.Content)
-	
+
 	if strings.Contains(content, "interface") || strings.Contains(content, "link") {
 		message.EventType = "interface"
 	} else if strings.Contains(content, "login") || strings.Contains(content, "auth") {

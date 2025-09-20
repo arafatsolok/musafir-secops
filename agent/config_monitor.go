@@ -27,18 +27,18 @@ type ConfigurationMonitor struct {
 
 // MonitoredDevice represents a device being monitored for configuration changes
 type MonitoredDevice struct {
-	IP               string                    `json:"ip"`
-	Hostname         string                    `json:"hostname"`
-	DeviceType       string                    `json:"device_type"`
-	Vendor           string                    `json:"vendor"`
-	SNMPCommunity    string                    `json:"snmp_community,omitempty"`
-	SSHCredentials   *SSHCredentials           `json:"ssh_credentials,omitempty"`
-	HTTPCredentials  *HTTPCredentials          `json:"http_credentials,omitempty"`
-	LastConfigHash   string                    `json:"last_config_hash"`
-	LastConfigCheck  time.Time                 `json:"last_config_check"`
-	ConfigHistory    []*ConfigurationSnapshot  `json:"config_history"`
-	MonitoringMethod string                    `json:"monitoring_method"`
-	Enabled          bool                      `json:"enabled"`
+	IP               string                   `json:"ip"`
+	Hostname         string                   `json:"hostname"`
+	DeviceType       string                   `json:"device_type"`
+	Vendor           string                   `json:"vendor"`
+	SNMPCommunity    string                   `json:"snmp_community,omitempty"`
+	SSHCredentials   *SSHCredentials          `json:"ssh_credentials,omitempty"`
+	HTTPCredentials  *HTTPCredentials         `json:"http_credentials,omitempty"`
+	LastConfigHash   string                   `json:"last_config_hash"`
+	LastConfigCheck  time.Time                `json:"last_config_check"`
+	ConfigHistory    []*ConfigurationSnapshot `json:"config_history"`
+	MonitoringMethod string                   `json:"monitoring_method"`
+	Enabled          bool                     `json:"enabled"`
 }
 
 // SSHCredentials for SSH-based configuration retrieval
@@ -59,25 +59,25 @@ type HTTPCredentials struct {
 
 // ConfigurationSnapshot represents a point-in-time configuration
 type ConfigurationSnapshot struct {
-	Timestamp     time.Time         `json:"timestamp"`
-	ConfigHash    string            `json:"config_hash"`
-	ConfigSize    int               `json:"config_size"`
-	ConfigData    string            `json:"config_data,omitempty"`
-	Changes       []*ConfigChange   `json:"changes"`
-	RetrievalMethod string          `json:"retrieval_method"`
-	Metadata      map[string]string `json:"metadata"`
+	Timestamp       time.Time         `json:"timestamp"`
+	ConfigHash      string            `json:"config_hash"`
+	ConfigSize      int               `json:"config_size"`
+	ConfigData      string            `json:"config_data,omitempty"`
+	Changes         []*ConfigChange   `json:"changes"`
+	RetrievalMethod string            `json:"retrieval_method"`
+	Metadata        map[string]string `json:"metadata"`
 }
 
 // ConfigChange represents a specific configuration change
 type ConfigChange struct {
-	Type        string    `json:"type"`        // added, removed, modified
-	Section     string    `json:"section"`     // interface, routing, acl, etc.
-	LineNumber  int       `json:"line_number,omitempty"`
-	OldValue    string    `json:"old_value,omitempty"`
-	NewValue    string    `json:"new_value"`
-	Description string    `json:"description"`
-	Severity    string    `json:"severity"`   // low, medium, high, critical
-	Impact      string    `json:"impact"`     // security, performance, availability
+	Type        string `json:"type"`    // added, removed, modified
+	Section     string `json:"section"` // interface, routing, acl, etc.
+	LineNumber  int    `json:"line_number,omitempty"`
+	OldValue    string `json:"old_value,omitempty"`
+	NewValue    string `json:"new_value"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"` // low, medium, high, critical
+	Impact      string `json:"impact"`   // security, performance, availability
 }
 
 // ConfigurationStore manages configuration storage and retrieval
@@ -307,14 +307,14 @@ func (cm *ConfigurationMonitor) checkDeviceConfiguration(device *MonitoredDevice
 	// Generate configuration change event
 	cm.generateConfigChangeEvent(device, snapshot)
 
-	log.Printf("Configuration change detected for %s (%s) - %d changes", 
+	log.Printf("Configuration change detected for %s (%s) - %d changes",
 		device.IP, device.Hostname, len(snapshot.Changes))
 }
 
 // retrieveConfiguration retrieves configuration from a device
 func (cm *ConfigurationMonitor) retrieveConfiguration(device *MonitoredDevice) (string, string, error) {
 	// Try different methods based on device capabilities
-	
+
 	// Try SNMP first (if available)
 	if device.SNMPCommunity != "" && cm.snmpClient != nil {
 		config, err := cm.retrieveConfigViaSNMP(device)
@@ -346,21 +346,21 @@ func (cm *ConfigurationMonitor) retrieveConfiguration(device *MonitoredDevice) (
 }
 
 // retrieveConfigViaSNMP retrieves configuration via SNMP
-func (cm *ConfigurationMonitor) retrieveConfigViaSNMP(device *MonitoredDevice) (string, error) {
+func (cm *ConfigurationMonitor) retrieveConfigViaSNMP(_ *MonitoredDevice) (string, error) {
 	// This would use the SNMP client to retrieve configuration
 	// For now, return a placeholder
 	return "", fmt.Errorf("SNMP configuration retrieval not implemented")
 }
 
 // retrieveConfigViaSSH retrieves configuration via SSH
-func (cm *ConfigurationMonitor) retrieveConfigViaSSH(device *MonitoredDevice) (string, error) {
+func (cm *ConfigurationMonitor) retrieveConfigViaSSH(_ *MonitoredDevice) (string, error) {
 	// This would use SSH to connect and retrieve configuration
 	// Implementation would depend on the specific device type and vendor
 	return "", fmt.Errorf("SSH configuration retrieval not implemented")
 }
 
 // retrieveConfigViaHTTP retrieves configuration via HTTP/HTTPS
-func (cm *ConfigurationMonitor) retrieveConfigViaHTTP(device *MonitoredDevice) (string, error) {
+func (cm *ConfigurationMonitor) retrieveConfigViaHTTP(_ *MonitoredDevice) (string, error) {
 	// This would use HTTP/HTTPS API to retrieve configuration
 	// Implementation would depend on the specific device type and vendor
 	return "", fmt.Errorf("HTTP configuration retrieval not implemented")
@@ -370,7 +370,7 @@ func (cm *ConfigurationMonitor) retrieveConfigViaHTTP(device *MonitoredDevice) (
 func (cm *ConfigurationMonitor) calculateConfigHash(config string) string {
 	// Normalize configuration (remove timestamps, etc.)
 	normalized := cm.normalizeConfiguration(config)
-	
+
 	hash := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(hash[:])
 }
@@ -382,7 +382,7 @@ func (cm *ConfigurationMonitor) normalizeConfiguration(config string) string {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "!") || strings.HasPrefix(line, "#") {
 			continue
@@ -390,8 +390,8 @@ func (cm *ConfigurationMonitor) normalizeConfiguration(config string) string {
 
 		// Remove timestamps and dynamic values
 		if strings.Contains(line, "Current configuration") ||
-		   strings.Contains(line, "Last configuration change") ||
-		   strings.Contains(line, "NVRAM config last updated") {
+			strings.Contains(line, "Last configuration change") ||
+			strings.Contains(line, "NVRAM config last updated") {
 			continue
 		}
 
@@ -419,7 +419,7 @@ func (cm *ConfigurationMonitor) detectConfigurationChanges(device *MonitoredDevi
 // generateConfigChangeEvent generates an event for configuration changes
 func (cm *ConfigurationMonitor) generateConfigChangeEvent(device *MonitoredDevice, snapshot *ConfigurationSnapshot) {
 	severity := 2 // Default to informational
-	
+
 	// Determine severity based on changes
 	for _, change := range snapshot.Changes {
 		switch change.Severity {
@@ -449,7 +449,7 @@ func (cm *ConfigurationMonitor) generateConfigChangeEvent(device *MonitoredDevic
 			"name":     "config_modified",
 			"severity": severity,
 			"attrs": map[string]interface{}{
-				"device_type":       device.DeviceType,
+				"device_type":      device.DeviceType,
 				"vendor":           device.Vendor,
 				"config_hash":      snapshot.ConfigHash,
 				"config_size":      snapshot.ConfigSize,
@@ -513,7 +513,7 @@ func (d *CiscoChangeDetector) GetVendor() string { return "Cisco" }
 func (d *CiscoChangeDetector) GetConfigSections(config string) map[string]string {
 	sections := make(map[string]string)
 	lines := strings.Split(config, "\n")
-	
+
 	currentSection := "global"
 	var sectionLines []string
 
@@ -530,9 +530,9 @@ func (d *CiscoChangeDetector) GetConfigSections(config string) map[string]string
 			}
 			currentSection = line
 			sectionLines = []string{line}
-		} else if strings.HasPrefix(line, "router ") || 
-				  strings.HasPrefix(line, "access-list ") ||
-				  strings.HasPrefix(line, "ip route ") {
+		} else if strings.HasPrefix(line, "router ") ||
+			strings.HasPrefix(line, "access-list ") ||
+			strings.HasPrefix(line, "ip route ") {
 			if len(sectionLines) > 0 {
 				sections[currentSection] = strings.Join(sectionLines, "\n")
 			}
@@ -604,11 +604,11 @@ func (d *CiscoChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*Con
 
 func (d *CiscoChangeDetector) determineSeverity(section, changeType string) string {
 	section = strings.ToLower(section)
-	
+
 	// Critical changes
-	if strings.Contains(section, "access-list") || 
-	   strings.Contains(section, "ip route") ||
-	   strings.Contains(section, "enable secret") {
+	if strings.Contains(section, "access-list") ||
+		strings.Contains(section, "ip route") ||
+		strings.Contains(section, "enable secret") {
 		return "critical"
 	}
 
@@ -627,7 +627,7 @@ func (d *CiscoChangeDetector) determineSeverity(section, changeType string) stri
 
 func (d *CiscoChangeDetector) determineImpact(section string) string {
 	section = strings.ToLower(section)
-	
+
 	if strings.Contains(section, "access-list") {
 		return "security"
 	}
@@ -637,7 +637,7 @@ func (d *CiscoChangeDetector) determineImpact(section string) string {
 	if strings.Contains(section, "router") {
 		return "performance"
 	}
-	
+
 	return "configuration"
 }
 
@@ -650,7 +650,7 @@ func (d *JuniperChangeDetector) GetConfigSections(config string) map[string]stri
 	// Juniper uses hierarchical configuration
 	sections := make(map[string]string)
 	lines := strings.Split(config, "\n")
-	
+
 	var currentPath []string
 	var sectionLines []string
 
@@ -685,7 +685,7 @@ func (d *JuniperChangeDetector) GetConfigSections(config string) map[string]stri
 func (d *JuniperChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*ConfigChange, error) {
 	// Similar to Cisco but adapted for Juniper's hierarchical structure
 	changes := make([]*ConfigChange, 0)
-	
+
 	oldSections := d.GetConfigSections(oldConfig)
 	newSections := d.GetConfigSections(newConfig)
 
@@ -722,7 +722,7 @@ func (d *PaloAltoChangeDetector) GetConfigSections(config string) map[string]str
 
 func (d *PaloAltoChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*ConfigChange, error) {
 	changes := make([]*ConfigChange, 0)
-	
+
 	if oldConfig != newConfig {
 		changes = append(changes, &ConfigChange{
 			Type:        "modified",
@@ -746,7 +746,7 @@ func (d *FortinetChangeDetector) GetVendor() string { return "Fortinet" }
 func (d *FortinetChangeDetector) GetConfigSections(config string) map[string]string {
 	sections := make(map[string]string)
 	lines := strings.Split(config, "\n")
-	
+
 	currentSection := "global"
 	var sectionLines []string
 
@@ -778,7 +778,7 @@ func (d *FortinetChangeDetector) GetConfigSections(config string) map[string]str
 
 func (d *FortinetChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*ConfigChange, error) {
 	changes := make([]*ConfigChange, 0)
-	
+
 	oldSections := d.GetConfigSections(oldConfig)
 	newSections := d.GetConfigSections(newConfig)
 
@@ -821,18 +821,18 @@ func (d *GenericChangeDetector) GetConfigSections(config string) map[string]stri
 
 func (d *GenericChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*ConfigChange, error) {
 	changes := make([]*ConfigChange, 0)
-	
+
 	if oldConfig != newConfig {
 		// Simple line-by-line comparison
 		oldLines := strings.Split(oldConfig, "\n")
 		newLines := strings.Split(newConfig, "\n")
-		
+
 		// Find added/removed lines
 		oldLineMap := make(map[string]bool)
 		for _, line := range oldLines {
 			oldLineMap[line] = true
 		}
-		
+
 		newLineMap := make(map[string]bool)
 		for i, line := range newLines {
 			newLineMap[line] = true
@@ -848,7 +848,7 @@ func (d *GenericChangeDetector) DetectChanges(oldConfig, newConfig string) ([]*C
 				})
 			}
 		}
-		
+
 		for i, line := range oldLines {
 			if !newLineMap[line] {
 				changes = append(changes, &ConfigChange{

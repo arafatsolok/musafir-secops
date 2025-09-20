@@ -44,15 +44,15 @@ type DiscoveredDevice struct {
 
 // DeviceFingerprint contains device identification information
 type DeviceFingerprint struct {
-	TTL             int      `json:"ttl"`
-	WindowSize      int      `json:"window_size"`
-	HTTPBanner      string   `json:"http_banner,omitempty"`
-	SSHBanner       string   `json:"ssh_banner,omitempty"`
-	TelnetBanner    string   `json:"telnet_banner,omitempty"`
-	SNMPSysDescr    string   `json:"snmp_sys_descr,omitempty"`
-	DNSName         string   `json:"dns_name,omitempty"`
-	OSFingerprint   string   `json:"os_fingerprint,omitempty"`
-	ServiceBanners  []string `json:"service_banners"`
+	TTL            int      `json:"ttl"`
+	WindowSize     int      `json:"window_size"`
+	HTTPBanner     string   `json:"http_banner,omitempty"`
+	SSHBanner      string   `json:"ssh_banner,omitempty"`
+	TelnetBanner   string   `json:"telnet_banner,omitempty"`
+	SNMPSysDescr   string   `json:"snmp_sys_descr,omitempty"`
+	DNSName        string   `json:"dns_name,omitempty"`
+	OSFingerprint  string   `json:"os_fingerprint,omitempty"`
+	ServiceBanners []string `json:"service_banners"`
 }
 
 // Common network device ports
@@ -100,7 +100,7 @@ func (ns *NetworkScanner) AddScanRange(cidr string) error {
 	if err != nil {
 		return fmt.Errorf("invalid CIDR range: %v", err)
 	}
-	
+
 	ns.scanRanges = append(ns.scanRanges, cidr)
 	log.Printf("Added scan range: %s", cidr)
 	return nil
@@ -118,7 +118,7 @@ func (ns *NetworkScanner) Start() error {
 	}
 
 	ns.running = true
-	
+
 	// Auto-detect local network ranges if none specified
 	if len(ns.scanRanges) == 0 {
 		ranges, err := ns.detectLocalNetworks()
@@ -128,10 +128,10 @@ func (ns *NetworkScanner) Start() error {
 			ns.scanRanges = ranges
 		}
 	}
-	
+
 	// Start scanning goroutine
 	go ns.scanLoop()
-	
+
 	log.Println("Network scanner started")
 	return nil
 }
@@ -150,7 +150,7 @@ func (ns *NetworkScanner) Stop() {
 // detectLocalNetworks detects local network ranges to scan
 func (ns *NetworkScanner) detectLocalNetworks() ([]string, error) {
 	var ranges []string
-	
+
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ func (ns *NetworkScanner) detectLocalNetworks() ([]string, error) {
 func (ns *NetworkScanner) scanLoop() {
 	// Initial comprehensive scan
 	ns.performFullScan()
-	
+
 	// Periodic rescans
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -201,25 +201,25 @@ func (ns *NetworkScanner) scanLoop() {
 // performFullScan performs a comprehensive network scan
 func (ns *NetworkScanner) performFullScan() {
 	log.Println("Starting comprehensive network scan...")
-	
+
 	for _, cidr := range ns.scanRanges {
 		ns.scanNetwork(cidr)
 	}
-	
+
 	log.Printf("Network scan completed. Discovered %d devices", len(ns.discoveredDevices))
 }
 
 // performIncrementalScan performs a quick rescan of known devices
 func (ns *NetworkScanner) performIncrementalScan() {
 	log.Println("Performing incremental network scan...")
-	
+
 	ns.mutex.RLock()
 	devices := make([]*DiscoveredDevice, 0, len(ns.discoveredDevices))
 	for _, device := range ns.discoveredDevices {
 		devices = append(devices, device)
 	}
 	ns.mutex.RUnlock()
-	
+
 	// Rescan known devices
 	for _, device := range devices {
 		go ns.rescanDevice(device.IP)
@@ -236,7 +236,7 @@ func (ns *NetworkScanner) scanNetwork(cidr string) {
 
 	// Generate all IPs in the range
 	ips := generateIPRange(ipnet)
-	
+
 	// Limit concurrent scans
 	semaphore := make(chan struct{}, 50)
 	var wg sync.WaitGroup
@@ -247,7 +247,7 @@ func (ns *NetworkScanner) scanNetwork(cidr string) {
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			
+
 			ns.scanHost(targetIP)
 		}(ip)
 	}
@@ -278,28 +278,28 @@ func (ns *NetworkScanner) scanHost(ip string) {
 
 	// Port scan
 	ns.scanPorts(device)
-	
+
 	// Service detection
 	ns.detectServices(device)
-	
+
 	// SNMP discovery
 	ns.testSNMP(device)
-	
+
 	// Device fingerprinting
 	ns.fingerprintDevice(device)
-	
+
 	// Device classification
 	ns.classifyDevice(device)
-	
+
 	// Only add devices that look like network infrastructure
 	if ns.isNetworkDevice(device) {
 		ns.mutex.Lock()
 		ns.discoveredDevices[ip] = device
 		ns.mutex.Unlock()
-		
+
 		// Generate discovery event
 		ns.generateDiscoveryEvent(device)
-		
+
 		log.Printf("Discovered %s device at %s (%s)", device.DeviceType, ip, device.Hostname)
 	}
 }
@@ -319,7 +319,7 @@ func (ns *NetworkScanner) rescanDevice(ip string) {
 	ns.mutex.RLock()
 	device, exists := ns.discoveredDevices[ip]
 	ns.mutex.RUnlock()
-	
+
 	if exists {
 		device.LastSeen = time.Now()
 		// Quick port scan on known ports
@@ -345,7 +345,7 @@ func (ns *NetworkScanner) pingHost(ip string) bool {
 // scanPorts scans common network device ports
 func (ns *NetworkScanner) scanPorts(device *DiscoveredDevice) {
 	ports := append(NetworkDevicePorts, SecurityDevicePorts...)
-	
+
 	// Remove duplicates
 	portMap := make(map[int]bool)
 	uniquePorts := []int{}
@@ -384,13 +384,13 @@ func (ns *NetworkScanner) scanPorts(device *DiscoveredDevice) {
 // quickPortScan performs a quick scan of known open ports
 func (ns *NetworkScanner) quickPortScan(device *DiscoveredDevice) {
 	newOpenPorts := []int{}
-	
+
 	for _, port := range device.OpenPorts {
 		if ns.isPortOpen(device.IP, port) {
 			newOpenPorts = append(newOpenPorts, port)
 		}
 	}
-	
+
 	device.OpenPorts = newOpenPorts
 }
 
@@ -455,7 +455,7 @@ func (ns *NetworkScanner) grabBanner(ip string, port int) string {
 	defer conn.Close()
 
 	conn.SetReadDeadline(time.Now().Add(timeout))
-	
+
 	// Send appropriate probe based on port
 	switch port {
 	case 80, 8080:
@@ -480,7 +480,7 @@ func (ns *NetworkScanner) grabBanner(ip string, port int) string {
 // parseServiceFromBanner parses service information from banner
 func (ns *NetworkScanner) parseServiceFromBanner(banner string) string {
 	banner = strings.ToLower(banner)
-	
+
 	if strings.Contains(banner, "ssh") {
 		return "SSH"
 	}
@@ -493,7 +493,7 @@ func (ns *NetworkScanner) parseServiceFromBanner(banner string) string {
 	if strings.Contains(banner, "ftp") {
 		return "FTP"
 	}
-	
+
 	return "Unknown"
 }
 
@@ -503,7 +503,7 @@ func (ns *NetworkScanner) testSNMP(device *DiscoveredDevice) {
 		if ns.testSNMPCommunity(device.IP, community) {
 			device.SNMPEnabled = true
 			device.SNMPCommunity = community
-			
+
 			// Get system description via SNMP
 			sysDescr := ns.getSNMPSysDescr(device.IP, community)
 			if sysDescr != "" {
@@ -515,14 +515,14 @@ func (ns *NetworkScanner) testSNMP(device *DiscoveredDevice) {
 }
 
 // testSNMPCommunity tests a specific SNMP community
-func (ns *NetworkScanner) testSNMPCommunity(ip, community string) bool {
+func (ns *NetworkScanner) testSNMPCommunity(ip string, _ string) bool {
 	// This is a simplified test - in reality you'd use the gosnmp library
 	// For now, just check if port 161 is open
 	return ns.isPortOpen(ip, 161)
 }
 
 // getSNMPSysDescr gets system description via SNMP
-func (ns *NetworkScanner) getSNMPSysDescr(ip, community string) string {
+func (ns *NetworkScanner) getSNMPSysDescr(_ string, _ string) string {
 	// This would use the SNMP client we created earlier
 	// For now, return empty string
 	return ""
@@ -535,7 +535,7 @@ func (ns *NetworkScanner) fingerprintDevice(device *DiscoveredDevice) {
 		banner := ns.grabBanner(device.IP, port)
 		if banner != "" {
 			device.Fingerprint.ServiceBanners = append(device.Fingerprint.ServiceBanners, banner)
-			
+
 			switch port {
 			case 80, 8080:
 				device.Fingerprint.HTTPBanner = banner
@@ -564,7 +564,7 @@ func (ns *NetworkScanner) classifyDevice(device *DiscoveredDevice) {
 	// Analyze SNMP system description
 	if device.Fingerprint.SNMPSysDescr != "" {
 		sysDescr := strings.ToLower(device.Fingerprint.SNMPSysDescr)
-		
+
 		// Vendor detection
 		if strings.Contains(sysDescr, "cisco") {
 			vendor = "Cisco"
@@ -606,7 +606,7 @@ func (ns *NetworkScanner) classifyDevice(device *DiscoveredDevice) {
 			deviceType = "network_device"
 		}
 	}
-	
+
 	// Check for legacy protocols
 	if hasTelnet {
 		confidence += 0.1 // Telnet indicates older network equipment
@@ -636,8 +636,8 @@ func (ns *NetworkScanner) classifyDevice(device *DiscoveredDevice) {
 func (ns *NetworkScanner) isNetworkDevice(device *DiscoveredDevice) bool {
 	// Must have SNMP or management interface
 	hasSNMP := containsInt(device.OpenPorts, 161)
-	hasManagement := containsInt(device.OpenPorts, 80) || containsInt(device.OpenPorts, 443) || 
-					 containsInt(device.OpenPorts, 8080) || containsInt(device.OpenPorts, 8443)
+	hasManagement := containsInt(device.OpenPorts, 80) || containsInt(device.OpenPorts, 443) ||
+		containsInt(device.OpenPorts, 8080) || containsInt(device.OpenPorts, 8443)
 	hasSSH := containsInt(device.OpenPorts, 22)
 
 	// Basic criteria for network device
@@ -677,12 +677,12 @@ func (ns *NetworkScanner) generateDiscoveryEvent(device *DiscoveredDevice) {
 			"severity": 2,
 			"attrs": map[string]interface{}{
 				"device_type":      device.DeviceType,
-				"vendor":          device.Vendor,
-				"hostname":        device.Hostname,
-				"open_ports":      device.OpenPorts,
-				"services":        device.Services,
-				"snmp_enabled":    device.SNMPEnabled,
-				"confidence":      device.Confidence,
+				"vendor":           device.Vendor,
+				"hostname":         device.Hostname,
+				"open_ports":       device.OpenPorts,
+				"services":         device.Services,
+				"snmp_enabled":     device.SNMPEnabled,
+				"confidence":       device.Confidence,
 				"first_discovered": device.FirstDiscovered,
 			},
 		},
@@ -703,7 +703,7 @@ func (ns *NetworkScanner) generateDiscoveryEvent(device *DiscoveredDevice) {
 
 func generateIPRange(ipnet *net.IPNet) []string {
 	var ips []string
-	
+
 	ip := ipnet.IP.To4()
 	if ip == nil {
 		return ips // IPv6 not supported in this simple implementation
@@ -713,7 +713,7 @@ func generateIPRange(ipnet *net.IPNet) []string {
 	network := ip.Mask(mask)
 	broadcast := make(net.IP, len(network))
 	copy(broadcast, network)
-	
+
 	for i := range broadcast {
 		broadcast[i] |= ^mask[i]
 	}
@@ -773,7 +773,7 @@ func containsInt(slice []int, item int) bool {
 func (ns *NetworkScanner) GetDiscoveredDevices() map[string]*DiscoveredDevice {
 	ns.mutex.RLock()
 	defer ns.mutex.RUnlock()
-	
+
 	devices := make(map[string]*DiscoveredDevice)
 	for k, v := range ns.discoveredDevices {
 		devices[k] = v

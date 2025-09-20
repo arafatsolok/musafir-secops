@@ -16,24 +16,24 @@ import (
 
 // Process monitoring structures
 type ProcessEvent struct {
-	EventType   string      `json:"event_type"`
-	Timestamp   string      `json:"timestamp"`
-	ProcessInfo ProcessInfo `json:"process_info"`
+	EventType   string       `json:"event_type"`
+	Timestamp   string       `json:"timestamp"`
+	ProcessInfo ProcessInfo  `json:"process_info"`
 	ParentInfo  *ProcessInfo `json:"parent_info,omitempty"`
-	EventData   interface{} `json:"event_data,omitempty"`
+	EventData   interface{}  `json:"event_data,omitempty"`
 }
 
 type ProcessCreateEvent struct {
-	CommandLine     string            `json:"command_line"`
-	CurrentDirectory string           `json:"current_directory"`
-	Environment     map[string]string `json:"environment"`
-	CreationFlags   uint32            `json:"creation_flags"`
+	CommandLine      string            `json:"command_line"`
+	CurrentDirectory string            `json:"current_directory"`
+	Environment      map[string]string `json:"environment"`
+	CreationFlags    uint32            `json:"creation_flags"`
 }
 
 type ProcessTerminateEvent struct {
-	ExitCode   uint32 `json:"exit_code"`
-	Reason     string `json:"reason"`
-	Duration   int64  `json:"duration_seconds"`
+	ExitCode uint32 `json:"exit_code"`
+	Reason   string `json:"reason"`
+	Duration int64  `json:"duration_seconds"`
 }
 
 type ProcessImageLoadEvent struct {
@@ -45,22 +45,22 @@ type ProcessImageLoadEvent struct {
 }
 
 type ProcessNetworkEvent struct {
-	EventType    string `json:"event_type"` // connect, listen, send, receive
-	Protocol     string `json:"protocol"`
-	LocalAddr    string `json:"local_address"`
-	LocalPort    int    `json:"local_port"`
-	RemoteAddr   string `json:"remote_address"`
-	RemotePort   int    `json:"remote_port"`
+	EventType        string `json:"event_type"` // connect, listen, send, receive
+	Protocol         string `json:"protocol"`
+	LocalAddr        string `json:"local_address"`
+	LocalPort        int    `json:"local_port"`
+	RemoteAddr       string `json:"remote_address"`
+	RemotePort       int    `json:"remote_port"`
 	BytesTransferred uint64 `json:"bytes_transferred"`
 }
 
 type ProcessFileEvent struct {
-	EventType   string `json:"event_type"` // create, read, write, delete, rename
-	FilePath    string `json:"file_path"`
-	OldPath     string `json:"old_path,omitempty"`
-	FileSize    uint64 `json:"file_size"`
-	Attributes  uint32 `json:"attributes"`
-	AccessMask  uint32 `json:"access_mask"`
+	EventType  string `json:"event_type"` // create, read, write, delete, rename
+	FilePath   string `json:"file_path"`
+	OldPath    string `json:"old_path,omitempty"`
+	FileSize   uint64 `json:"file_size"`
+	Attributes uint32 `json:"attributes"`
+	AccessMask uint32 `json:"access_mask"`
 }
 
 type ProcessRegistryEvent struct {
@@ -96,13 +96,13 @@ func (pm *ProcessMonitor) Start() error {
 	}
 
 	pm.running = true
-	
+
 	// Start process enumeration goroutine
 	go pm.enumerateProcesses()
-	
+
 	// Start event processing goroutine
 	go pm.processEvents()
-	
+
 	log.Println("Process monitor started")
 	return nil
 }
@@ -141,7 +141,7 @@ func (pm *ProcessMonitor) enumerateProcesses() {
 // scanProcesses scans for new and terminated processes
 func (pm *ProcessMonitor) scanProcesses() {
 	currentProcesses := make(map[uint32]bool)
-	
+
 	// Get current process list
 	processes, err := enumProcesses()
 	if err != nil {
@@ -151,26 +151,26 @@ func (pm *ProcessMonitor) scanProcesses() {
 
 	for _, pid := range processes {
 		currentProcesses[pid] = true
-		
+
 		// Check if this is a new process
 		if _, exists := pm.processes[pid]; !exists {
 			if processInfo := pm.getProcessInfo(pid); processInfo != nil {
 				pm.processes[pid] = processInfo
-				
+
 				// Generate process create event
 				event := ProcessEvent{
 					EventType:   "process_create",
 					Timestamp:   time.Now().UTC().Format(time.RFC3339),
 					ProcessInfo: *processInfo,
 				}
-				
+
 				// Get parent process info
 				if processInfo.PPID != 0 {
 					if parentInfo := pm.getProcessInfo(uint32(processInfo.PPID)); parentInfo != nil {
 						event.ParentInfo = parentInfo
 					}
 				}
-				
+
 				pm.eventChannel <- event
 			}
 		}
@@ -185,7 +185,7 @@ func (pm *ProcessMonitor) scanProcesses() {
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
 				ProcessInfo: *processInfo,
 			}
-			
+
 			pm.eventChannel <- event
 			delete(pm.processes, pid)
 		}
@@ -317,7 +317,7 @@ func (pm *ProcessMonitor) handleProcessEvent(event ProcessEvent) {
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	go sendEventToGateway(gatewayURL, data)
 }
 
@@ -400,16 +400,16 @@ func getProcessCreationTime(handle windows.Handle) time.Time {
 func getProcessMemoryUsage(handle windows.Handle) uint64 {
 	// Use PROCESS_MEMORY_COUNTERS instead of ProcessMemoryCountersEx
 	type PROCESS_MEMORY_COUNTERS struct {
-		Size                         uint32
-		PageFaultCount               uint32
-		PeakWorkingSetSize           uintptr
-		WorkingSetSize               uintptr
-		QuotaPeakPagedPoolUsage      uintptr
-		QuotaPagedPoolUsage          uintptr
-		QuotaPeakNonPagedPoolUsage   uintptr
-		QuotaNonPagedPoolUsage       uintptr
-		PagefileUsage                uintptr
-		PeakPagefileUsage            uintptr
+		Size                       uint32
+		PageFaultCount             uint32
+		PeakWorkingSetSize         uintptr
+		WorkingSetSize             uintptr
+		QuotaPeakPagedPoolUsage    uintptr
+		QuotaPagedPoolUsage        uintptr
+		QuotaPeakNonPagedPoolUsage uintptr
+		QuotaNonPagedPoolUsage     uintptr
+		PagefileUsage              uintptr
+		PeakPagefileUsage          uintptr
 	}
 
 	var memCounters PROCESS_MEMORY_COUNTERS

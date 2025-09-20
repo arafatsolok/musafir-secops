@@ -13,11 +13,11 @@ import (
 
 // Network monitoring structures
 type NetworkEvent struct {
-	EventType     string        `json:"event_type"`
-	Timestamp     string        `json:"timestamp"`
-	ProcessInfo   ProcessInfo   `json:"process_info"`
+	EventType      string         `json:"event_type"`
+	Timestamp      string         `json:"timestamp"`
+	ProcessInfo    ProcessInfo    `json:"process_info"`
 	ConnectionInfo ConnectionInfo `json:"connection_info"`
-	TrafficInfo   *TrafficInfo  `json:"traffic_info,omitempty"`
+	TrafficInfo    *TrafficInfo   `json:"traffic_info,omitempty"`
 }
 
 type ConnectionInfo struct {
@@ -32,45 +32,45 @@ type ConnectionInfo struct {
 }
 
 type TrafficInfo struct {
-	BytesSent     uint64 `json:"bytes_sent"`
-	BytesReceived uint64 `json:"bytes_received"`
-	PacketsSent   uint64 `json:"packets_sent"`
+	BytesSent       uint64 `json:"bytes_sent"`
+	BytesReceived   uint64 `json:"bytes_received"`
+	PacketsSent     uint64 `json:"packets_sent"`
 	PacketsReceived uint64 `json:"packets_received"`
-	Duration      int64  `json:"duration_seconds"`
+	Duration        int64  `json:"duration_seconds"`
 }
 
 type NetworkInterface struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	MACAddress   string `json:"mac_address"`
-	IPAddresses  []string `json:"ip_addresses"`
-	Status       string `json:"status"`
-	Speed        uint64 `json:"speed_mbps"`
-	BytesSent    uint64 `json:"bytes_sent"`
-	BytesReceived uint64 `json:"bytes_received"`
-	PacketsSent  uint64 `json:"packets_sent"`
-	PacketsReceived uint64 `json:"packets_received"`
-	Errors       uint64 `json:"errors"`
-	Drops        uint64 `json:"drops"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	MACAddress      string   `json:"mac_address"`
+	IPAddresses     []string `json:"ip_addresses"`
+	Status          string   `json:"status"`
+	Speed           uint64   `json:"speed_mbps"`
+	BytesSent       uint64   `json:"bytes_sent"`
+	BytesReceived   uint64   `json:"bytes_received"`
+	PacketsSent     uint64   `json:"packets_sent"`
+	PacketsReceived uint64   `json:"packets_received"`
+	Errors          uint64   `json:"errors"`
+	Drops           uint64   `json:"drops"`
 }
 
 type DNSQuery struct {
-	QueryName   string `json:"query_name"`
-	QueryType   string `json:"query_type"`
-	Response    string `json:"response"`
+	QueryName    string `json:"query_name"`
+	QueryType    string `json:"query_type"`
+	Response     string `json:"response"`
 	ResponseCode string `json:"response_code"`
-	ProcessID   int    `json:"process_id"`
-	Timestamp   string `json:"timestamp"`
+	ProcessID    int    `json:"process_id"`
+	Timestamp    string `json:"timestamp"`
 }
 
 // Network Monitor manages network monitoring
 type NetworkMonitor struct {
-	connections   map[string]*ConnectionInfo
-	interfaces    map[string]*NetworkInterface
-	eventChannel  chan NetworkEvent
-	stopChannel   chan bool
-	running       bool
-	dnsQueries    []DNSQuery
+	connections  map[string]*ConnectionInfo
+	interfaces   map[string]*NetworkInterface
+	eventChannel chan NetworkEvent
+	stopChannel  chan bool
+	running      bool
+	dnsQueries   []DNSQuery
 }
 
 // NewNetworkMonitor creates a new network monitor
@@ -92,19 +92,19 @@ func (nm *NetworkMonitor) Start() error {
 	}
 
 	nm.running = true
-	
+
 	// Start connection monitoring goroutine
 	go nm.monitorConnections()
-	
+
 	// Start interface monitoring goroutine
 	go nm.monitorInterfaces()
-	
+
 	// Start DNS monitoring goroutine
 	go nm.monitorDNS()
-	
+
 	// Start event processing goroutine
 	go nm.processEvents()
-	
+
 	log.Println("Network monitor started")
 	return nil
 }
@@ -143,7 +143,7 @@ func (nm *NetworkMonitor) monitorConnections() {
 // scanConnections scans for new and closed connections
 func (nm *NetworkMonitor) scanConnections() {
 	currentConnections := make(map[string]bool)
-	
+
 	// Get TCP connections
 	tcpConnections, err := getTCPConnections()
 	if err != nil {
@@ -152,19 +152,19 @@ func (nm *NetworkMonitor) scanConnections() {
 	}
 
 	for _, conn := range tcpConnections {
-		connKey := fmt.Sprintf("%s:%s:%d:%s:%d", 
-			conn.Protocol, conn.LocalAddress, conn.LocalPort, 
+		connKey := fmt.Sprintf("%s:%s:%d:%s:%d",
+			conn.Protocol, conn.LocalAddress, conn.LocalPort,
 			conn.RemoteAddress, conn.RemotePort)
-		
+
 		currentConnections[connKey] = true
-		
+
 		// Check if this is a new connection
 		if _, exists := nm.connections[connKey]; !exists {
 			nm.connections[connKey] = &conn
-			
+
 			// Get process info for this connection
 			processInfo := nm.getProcessForConnection()
-			
+
 			// Generate connection event
 			event := NetworkEvent{
 				EventType:      "connection_established",
@@ -172,7 +172,7 @@ func (nm *NetworkMonitor) scanConnections() {
 				ProcessInfo:    processInfo,
 				ConnectionInfo: conn,
 			}
-			
+
 			nm.eventChannel <- event
 		}
 	}
@@ -185,23 +185,23 @@ func (nm *NetworkMonitor) scanConnections() {
 	}
 
 	for _, conn := range udpConnections {
-		connKey := fmt.Sprintf("%s:%s:%d", 
+		connKey := fmt.Sprintf("%s:%s:%d",
 			conn.Protocol, conn.LocalAddress, conn.LocalPort)
-		
+
 		currentConnections[connKey] = true
-		
+
 		if _, exists := nm.connections[connKey]; !exists {
 			nm.connections[connKey] = &conn
-			
+
 			processInfo := nm.getProcessForConnection()
-			
+
 			event := NetworkEvent{
 				EventType:      "connection_listening",
 				Timestamp:      time.Now().UTC().Format(time.RFC3339),
 				ProcessInfo:    processInfo,
 				ConnectionInfo: conn,
 			}
-			
+
 			nm.eventChannel <- event
 		}
 	}
@@ -210,14 +210,14 @@ func (nm *NetworkMonitor) scanConnections() {
 	for connKey, conn := range nm.connections {
 		if !currentConnections[connKey] {
 			processInfo := nm.getProcessForConnection()
-			
+
 			event := NetworkEvent{
 				EventType:      "connection_closed",
 				Timestamp:      time.Now().UTC().Format(time.RFC3339),
 				ProcessInfo:    processInfo,
 				ConnectionInfo: *conn,
 			}
-			
+
 			nm.eventChannel <- event
 			delete(nm.connections, connKey)
 		}
@@ -250,9 +250,9 @@ func (nm *NetworkMonitor) scanInterfaces() {
 	for _, iface := range interfaces {
 		// Check for significant changes in traffic
 		if existing, exists := nm.interfaces[iface.Name]; exists {
-			bytesDiff := iface.BytesReceived - existing.BytesReceived + 
-						iface.BytesSent - existing.BytesSent
-			
+			bytesDiff := iface.BytesReceived - existing.BytesReceived +
+				iface.BytesSent - existing.BytesSent
+
 			if bytesDiff > 1024*1024 { // More than 1MB difference
 				event := NetworkEvent{
 					EventType: "interface_traffic",
@@ -262,22 +262,22 @@ func (nm *NetworkMonitor) scanInterfaces() {
 						PID:  0,
 					},
 					ConnectionInfo: ConnectionInfo{
-						Protocol: "interface",
+						Protocol:     "interface",
 						LocalAddress: iface.Name,
 					},
 					TrafficInfo: &TrafficInfo{
-						BytesSent:     iface.BytesSent - existing.BytesSent,
-						BytesReceived: iface.BytesReceived - existing.BytesReceived,
-						PacketsSent:   iface.PacketsSent - existing.PacketsSent,
+						BytesSent:       iface.BytesSent - existing.BytesSent,
+						BytesReceived:   iface.BytesReceived - existing.BytesReceived,
+						PacketsSent:     iface.PacketsSent - existing.PacketsSent,
 						PacketsReceived: iface.PacketsReceived - existing.PacketsReceived,
-						Duration:      30, // 30 seconds interval
+						Duration:        30, // 30 seconds interval
 					},
 				}
-				
+
 				nm.eventChannel <- event
 			}
 		}
-		
+
 		nm.interfaces[iface.Name] = &iface
 	}
 }
@@ -303,22 +303,22 @@ func (nm *NetworkMonitor) monitorDNS() {
 func (nm *NetworkMonitor) scanDNSQueries() {
 	// This is a placeholder - real implementation would use ETW or WinPcap
 	// For demonstration, we'll generate sample DNS events
-	
+
 	dnsServers := []string{"8.8.8.8", "1.1.1.1", "208.67.222.222"}
-	
+
 	for _, server := range dnsServers {
 		connections := nm.getConnectionsToServer(server, 53)
-		
+
 		for _, conn := range connections {
 			processInfo := nm.getProcessForConnection()
-			
+
 			event := NetworkEvent{
 				EventType:      "dns_query",
 				Timestamp:      time.Now().UTC().Format(time.RFC3339),
 				ProcessInfo:    processInfo,
 				ConnectionInfo: conn,
 			}
-			
+
 			nm.eventChannel <- event
 		}
 	}
@@ -393,7 +393,7 @@ func (nm *NetworkMonitor) handleNetworkEvent(event NetworkEvent) {
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	go sendEventToGateway(gatewayURL, data)
 }
 
@@ -414,7 +414,7 @@ func getTCPConnections() ([]ConnectionInfo, error) {
 			CreationTime:  time.Now().UTC().Format(time.RFC3339),
 		},
 	}
-	
+
 	return connections, nil
 }
 
@@ -430,7 +430,7 @@ func getUDPConnections() ([]ConnectionInfo, error) {
 			CreationTime: time.Now().UTC().Format(time.RFC3339),
 		},
 	}
-	
+
 	return connections, nil
 }
 
@@ -441,11 +441,11 @@ func getNetworkInterfaces() ([]NetworkInterface, error) {
 	}
 
 	var result []NetworkInterface
-	
+
 	for _, iface := range interfaces {
 		addrs, _ := iface.Addrs()
 		var ipAddresses []string
-		
+
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok {
 				ipAddresses = append(ipAddresses, ipnet.IP.String())
@@ -467,10 +467,10 @@ func getNetworkInterfaces() ([]NetworkInterface, error) {
 			Errors:          0,
 			Drops:           0,
 		}
-		
+
 		result = append(result, netIface)
 	}
-	
+
 	return result, nil
 }
 
@@ -494,13 +494,13 @@ func (nm *NetworkMonitor) getProcessForConnection() ProcessInfo {
 
 func (nm *NetworkMonitor) getConnectionsToServer(serverIP string, port int) []ConnectionInfo {
 	var connections []ConnectionInfo
-	
+
 	for _, conn := range nm.connections {
 		if conn.RemoteAddress == serverIP && conn.RemotePort == port {
 			connections = append(connections, *conn)
 		}
 	}
-	
+
 	return connections
 }
 

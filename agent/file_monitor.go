@@ -21,40 +21,40 @@ import (
 
 // File monitoring structures
 type FileEvent struct {
-	EventType    string      `json:"event_type"`
-	Timestamp    string      `json:"timestamp"`
-	ProcessInfo  ProcessInfo `json:"process_info"`
-	FileInfo     FileInfo    `json:"file_info"`
-	OldFileInfo  *FileInfo   `json:"old_file_info,omitempty"`
+	EventType     string         `json:"event_type"`
+	Timestamp     string         `json:"timestamp"`
+	ProcessInfo   ProcessInfo    `json:"process_info"`
+	FileInfo      FileInfo       `json:"file_info"`
+	OldFileInfo   *FileInfo      `json:"old_file_info,omitempty"`
 	IntegrityInfo *IntegrityInfo `json:"integrity_info,omitempty"`
 }
 
 // FileInfo is defined in common_types.go
 
 type IntegrityInfo struct {
-	MD5Hash    string `json:"md5_hash"`
-	SHA256Hash string `json:"sha256_hash"`
-	Changed    bool   `json:"changed"`
-	PreviousMD5 string `json:"previous_md5,omitempty"`
+	MD5Hash        string `json:"md5_hash"`
+	SHA256Hash     string `json:"sha256_hash"`
+	Changed        bool   `json:"changed"`
+	PreviousMD5    string `json:"previous_md5,omitempty"`
 	PreviousSHA256 string `json:"previous_sha256,omitempty"`
 }
 
 type WatchedDirectory struct {
-	Path      string
-	Recursive bool
-	Handle    windows.Handle
-	Buffer    []byte
+	Path       string
+	Recursive  bool
+	Handle     windows.Handle
+	Buffer     []byte
 	Overlapped windows.Overlapped
 }
 
 // File Monitor manages file system monitoring
 type FileMonitor struct {
-	watchedDirs   map[string]*WatchedDirectory
-	fileHashes    map[string]IntegrityInfo
-	eventChannel  chan FileEvent
-	stopChannel   chan bool
-	running       bool
-	criticalPaths []string
+	watchedDirs    map[string]*WatchedDirectory
+	fileHashes     map[string]IntegrityInfo
+	eventChannel   chan FileEvent
+	stopChannel    chan bool
+	running        bool
+	criticalPaths  []string
 	suspiciousExts []string
 }
 
@@ -88,23 +88,23 @@ func (fm *FileMonitor) Start() error {
 	}
 
 	fm.running = true
-	
+
 	// Start monitoring critical directories
 	for _, path := range fm.criticalPaths {
 		if err := fm.watchDirectory(path, true); err != nil {
 			log.Printf("Failed to watch directory %s: %v", path, err)
 		}
 	}
-	
+
 	// Start integrity checking goroutine
 	go fm.performIntegrityChecks()
-	
+
 	// Start event processing goroutine
 	go fm.processEvents()
-	
+
 	// Start directory monitoring goroutine
 	go fm.monitorDirectories()
-	
+
 	log.Println("File monitor started")
 	return nil
 }
@@ -116,12 +116,12 @@ func (fm *FileMonitor) Stop() {
 	}
 
 	fm.running = false
-	
+
 	// Close all directory handles
 	for _, watchedDir := range fm.watchedDirs {
 		windows.CloseHandle(watchedDir.Handle)
 	}
-	
+
 	close(fm.stopChannel)
 	log.Println("File monitor stopped")
 }
@@ -162,10 +162,10 @@ func (fm *FileMonitor) watchDirectory(path string, recursive bool) error {
 	}
 
 	fm.watchedDirs[path] = watchedDir
-	
+
 	// Start watching
 	go fm.watchDirectoryChanges(watchedDir)
-	
+
 	return nil
 }
 
@@ -173,7 +173,7 @@ func (fm *FileMonitor) watchDirectory(path string, recursive bool) error {
 func (fm *FileMonitor) watchDirectoryChanges(watchedDir *WatchedDirectory) {
 	for fm.running {
 		var bytesReturned uint32
-		
+
 		err := windows.ReadDirectoryChanges(
 			watchedDir.Handle,
 			&watchedDir.Buffer[0],
@@ -189,7 +189,7 @@ func (fm *FileMonitor) watchDirectoryChanges(watchedDir *WatchedDirectory) {
 			&watchedDir.Overlapped,
 			0,
 		)
-		
+
 		if err != nil {
 			if err != windows.ERROR_IO_PENDING {
 				log.Printf("ReadDirectoryChanges failed for %s: %v", watchedDir.Path, err)
@@ -214,22 +214,22 @@ func (fm *FileMonitor) watchDirectoryChanges(watchedDir *WatchedDirectory) {
 // processDirectoryChanges processes directory change notifications
 func (fm *FileMonitor) processDirectoryChanges(watchedDir *WatchedDirectory, buffer []byte) {
 	offset := uint32(0)
-	
+
 	for offset < uint32(len(buffer)) {
 		// Parse FILE_NOTIFY_INFORMATION structure
 		info := (*windows.FileNotifyInformation)(unsafe.Pointer(&buffer[offset]))
-		
+
 		// Get filename
 		nameBytes := (*[256]uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(info)) + unsafe.Sizeof(*info)))
 		filename := windows.UTF16ToString(nameBytes[:info.FileNameLength/2])
 		fullPath := filepath.Join(watchedDir.Path, filename)
-		
+
 		// Create file event
 		event := fm.createFileEvent(info.Action, fullPath)
 		if event != nil {
 			fm.eventChannel <- *event
 		}
-		
+
 		// Move to next entry
 		if info.NextEntryOffset == 0 {
 			break
@@ -241,7 +241,7 @@ func (fm *FileMonitor) processDirectoryChanges(watchedDir *WatchedDirectory, buf
 // createFileEvent creates a file event from Windows notification
 func (fm *FileMonitor) createFileEvent(action uint32, filePath string) *FileEvent {
 	var eventType string
-	
+
 	switch action {
 	case windows.FILE_ACTION_ADDED:
 		eventType = "file_created"
@@ -306,7 +306,7 @@ func (fm *FileMonitor) getFileInfo(filePath string) *FileInfo {
 	owner := fm.getFileOwner()
 
 	fileInfo := &FileInfo{
-		Path:         filePath,
+		Path:        filePath,
 		Name:        stat.Name(),
 		Size:        stat.Size(),
 		ModTime:     stat.ModTime(),
@@ -389,7 +389,7 @@ func (fm *FileMonitor) checkCriticalFileIntegrity() {
 						PreviousSHA256: previousIntegrity.SHA256Hash,
 					},
 				}
-				
+
 				fm.eventChannel <- event
 			}
 		}
@@ -409,10 +409,10 @@ func (fm *FileMonitor) calculateFileIntegrity(filePath string) *IntegrityInfo {
 
 	md5Hash := md5.New()
 	sha256Hash := sha256.New()
-	
+
 	// Use MultiWriter to calculate both hashes in one pass
 	multiWriter := io.MultiWriter(md5Hash, sha256Hash)
-	
+
 	if _, err := io.Copy(multiWriter, file); err != nil {
 		return nil
 	}
@@ -484,11 +484,11 @@ func (fm *FileMonitor) handleFileEvent(event FileEvent) {
 	// Add integrity information if available
 	if event.IntegrityInfo != nil {
 		envelope.Event["integrity"] = map[string]interface{}{
-			"md5_hash":         event.IntegrityInfo.MD5Hash,
-			"sha256_hash":      event.IntegrityInfo.SHA256Hash,
-			"changed":          event.IntegrityInfo.Changed,
-			"previous_md5":     event.IntegrityInfo.PreviousMD5,
-			"previous_sha256":  event.IntegrityInfo.PreviousSHA256,
+			"md5_hash":        event.IntegrityInfo.MD5Hash,
+			"sha256_hash":     event.IntegrityInfo.SHA256Hash,
+			"changed":         event.IntegrityInfo.Changed,
+			"previous_md5":    event.IntegrityInfo.PreviousMD5,
+			"previous_sha256": event.IntegrityInfo.PreviousSHA256,
 		}
 	}
 
@@ -503,7 +503,7 @@ func (fm *FileMonitor) handleFileEvent(event FileEvent) {
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	go sendEventToGateway(gatewayURL, data)
 }
 
@@ -645,7 +645,7 @@ func getFileEventSeverity(eventType, filePath string) int {
 // convertAttributesToStrings converts Windows file attributes to a slice of strings
 func convertAttributesToStrings(attrs uint32) []string {
 	var attributes []string
-	
+
 	if attrs&windows.FILE_ATTRIBUTE_READONLY != 0 {
 		attributes = append(attributes, "readonly")
 	}
@@ -667,6 +667,6 @@ func convertAttributesToStrings(attrs uint32) []string {
 	if attrs&windows.FILE_ATTRIBUTE_COMPRESSED != 0 {
 		attributes = append(attributes, "compressed")
 	}
-	
+
 	return attributes
 }

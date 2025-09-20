@@ -4,10 +4,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,22 +18,22 @@ import (
 
 // Global monitoring instances
 var (
-	telemetryCollector     *WindowsTelemetryCollector
-	processMonitor         *ProcessMonitor
-	networkMonitor         *NetworkMonitor
-	fileMonitor            *FileMonitor
-	registryMonitor        *RegistryMonitor
-	threatDetector         *ThreatDetector
-	queryEngine            *QueryEngine
-	assetInventory         *AssetInventory
-	complianceMonitor      *ComplianceMonitor
-	uebaAnalytics          *UEBAAnalytics
-	forensicsCollector     *ForensicsCollector
+	telemetryCollector *WindowsTelemetryCollector
+	processMonitor     *ProcessMonitor
+	networkMonitor     *NetworkMonitor
+	fileMonitor        *FileMonitor
+	registryMonitor    *RegistryMonitor
+	threatDetector     *ThreatDetector
+	queryEngine        *QueryEngine
+	assetInventory     *AssetInventory
+	complianceMonitor  *ComplianceMonitor
+	uebaAnalytics      *UEBAAnalytics
+	forensicsCollector *ForensicsCollector
 	// Network infrastructure monitoring components
-	snmpClient             *SNMPClient
-	networkScanner         *NetworkScanner
-	syslogReceiver         *SyslogReceiver
-	configurationMonitor   *ConfigurationMonitor
+	snmpClient           *SNMPClient
+	networkScanner       *NetworkScanner
+	syslogReceiver       *SyslogReceiver
+	configurationMonitor *ConfigurationMonitor
 )
 
 // Windows-specific agent capabilities
@@ -42,13 +44,13 @@ func init() {
 // Enhanced Windows event generation with comprehensive telemetry
 func generateEnhancedWindowsEvent() Envelope {
 	hostname, _ := os.Hostname()
-	
+
 	// Define gatewayURL
 	gatewayURL := os.Getenv("GATEWAY_URL")
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	// Collect comprehensive system information
 	systemInfo, err := telemetryCollector.CollectSystemInfo()
 	if err != nil {
@@ -59,27 +61,27 @@ func generateEnhancedWindowsEvent() Envelope {
 	return Envelope{
 		TenantID: "t-aci",
 		Asset: map[string]string{
-			"id":       hostname,
-			"type":     "endpoint",
-			"os":       "windows",
-			"os_name":         systemInfo.OS.Name,
-			"os_version":      systemInfo.OS.Version,
-			"domain":          systemInfo.Domain,
-			"ip":       getLocalIP(),
+			"id":         hostname,
+			"type":       "endpoint",
+			"os":         "windows",
+			"os_name":    systemInfo.OS.Name,
+			"os_version": systemInfo.OS.Version,
+			"domain":     systemInfo.Domain,
+			"ip":         getLocalIP(),
 		},
 		User: map[string]string{
-			"id":       "aad:" + getCurrentUsername(),
-			"sid":      getCurrentUserSID(),
-			"domain":   systemInfo.Domain,
+			"id":     "aad:" + getCurrentUsername(),
+			"sid":    getCurrentUserSID(),
+			"domain": systemInfo.Domain,
 		},
 		Event: map[string]interface{}{
 			"class":    "system",
 			"name":     "agent_heartbeat",
 			"severity": 1,
 			"attrs": map[string]interface{}{
-				"system_info":    systemInfo,
-				"agent_version":  "1.0.0-enhanced",
-				"monitoring":     []string{"process", "network", "file", "registry", "ransomware"},
+				"system_info":   systemInfo,
+				"agent_version": "1.0.0-enhanced",
+				"monitoring":    []string{"process", "network", "file", "registry", "ransomware"},
 				"uptime":        getSystemUptime(),
 				"cpu_usage":     systemInfo.Performance.CPUUsage,
 				"memory_usage":  systemInfo.Performance.MemoryUsage,
@@ -116,51 +118,51 @@ func getLocalIP() string {
 func initializeMonitoring() error {
 	// Initialize telemetry collector
 	telemetryCollector = NewWindowsTelemetryCollector()
-	
+
 	// Initialize process monitor
 	processMonitor = NewProcessMonitor()
-	
+
 	// Initialize network monitor
 	networkMonitor = NewNetworkMonitor()
-	
+
 	// Initialize file monitor
 	fileMonitor = NewFileMonitor()
-	
+
 	// Initialize registry monitor
 	registryMonitor = NewRegistryMonitor()
-	
+
 	// Initialize threat detector
 	threatDetector = NewThreatDetector()
-	
+
 	// Start threat intelligence updates
 	threatDetector.StartThreatIntelligenceUpdates()
-	
+
 	// Start alert processing system
 	threatDetector.StartAlertProcessor()
-	
+
 	log.Println("Threat detection system initialized and started")
-	
+
 	// Initialize query engine
 	queryEngine = NewQueryEngine(10000)
-	
+
 	// Initialize asset inventory
 	assetInventory = NewAssetInventory()
-	
+
 	// Initialize compliance monitor
 	complianceMonitor = NewComplianceMonitor()
-	
+
 	// Initialize UEBA analytics
 	uebaAnalytics = NewUEBAAnalytics()
-	
+
 	// Initialize forensics collector
 	forensicsCollector = NewForensicsCollector("default-collection", "./forensics")
-	
+
 	// Initialize network infrastructure monitoring components
 	snmpClient = NewSNMPClient()
 	networkScanner = NewNetworkScanner()
 	syslogReceiver = NewSyslogReceiver(514)
 	configurationMonitor = NewConfigurationMonitor(snmpClient)
-	
+
 	log.Println("All monitoring and analysis modules initialized successfully")
 	return nil
 }
@@ -168,13 +170,13 @@ func initializeMonitoring() error {
 // Start all monitoring services
 func startMonitoring(controllerURL string) {
 	log.Println("Starting comprehensive Windows monitoring...")
-	
+
 	// Define gatewayURL
 	gatewayURL := os.Getenv("GATEWAY_URL")
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	// Start process monitoring
 	go func() {
 		if err := processMonitor.Start(); err != nil {
@@ -185,22 +187,22 @@ func startMonitoring(controllerURL string) {
 			for event := range processMonitor.GetEventChannel() {
 				// Convert event to map for analytics processing
 				eventMap := map[string]interface{}{
-					"type":        "process_event",
-					"event_type":  event.EventType,
-					"timestamp":   event.Timestamp,
+					"type":         "process_event",
+					"event_type":   event.EventType,
+					"timestamp":    event.Timestamp,
 					"process_info": event.ProcessInfo,
-					"parent_info": event.ParentInfo,
-					"event_data":  event.EventData,
+					"parent_info":  event.ParentInfo,
+					"event_data":   event.EventData,
 				}
-				
+
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
-				
+
 				// Analyze for threats
 				if threatEvent := analyzeEventForThreats(event); threatEvent != nil {
 					handleThreatEvent(threatEvent, gatewayURL)
 				}
-				
+
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
 				envelope.Event = eventMap
@@ -209,7 +211,7 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}()
-	
+
 	// Start network monitoring
 	go func() {
 		if err := networkMonitor.Start(); err != nil {
@@ -220,22 +222,22 @@ func startMonitoring(controllerURL string) {
 			for event := range networkMonitor.GetEventChannel() {
 				// Convert event to map for analytics processing
 				eventMap := map[string]interface{}{
-					"type":           "network_event",
-					"event_type":     event.EventType,
-					"timestamp":      event.Timestamp,
-					"process_info":   event.ProcessInfo,
+					"type":            "network_event",
+					"event_type":      event.EventType,
+					"timestamp":       event.Timestamp,
+					"process_info":    event.ProcessInfo,
 					"connection_info": event.ConnectionInfo,
-					"traffic_info":   event.TrafficInfo,
+					"traffic_info":    event.TrafficInfo,
 				}
-				
+
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
-				
+
 				// Analyze for threats
 				if threatEvent := analyzeNetworkEventForThreats(event); threatEvent != nil {
 					handleThreatEvent(threatEvent, gatewayURL)
 				}
-				
+
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
 				envelope.Event = eventMap
@@ -244,7 +246,7 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}()
-	
+
 	// Start file monitoring
 	go func() {
 		if err := fileMonitor.Start(); err != nil {
@@ -255,23 +257,23 @@ func startMonitoring(controllerURL string) {
 			for event := range fileMonitor.GetEventChannel() {
 				// Convert event to map for analytics processing
 				eventMap := map[string]interface{}{
-					"type":         "file_event",
-					"event_type":   event.EventType,
-					"timestamp":    event.Timestamp,
-					"process_info": event.ProcessInfo,
-					"file_info":    event.FileInfo,
-					"old_file_info": event.OldFileInfo,
+					"type":           "file_event",
+					"event_type":     event.EventType,
+					"timestamp":      event.Timestamp,
+					"process_info":   event.ProcessInfo,
+					"file_info":      event.FileInfo,
+					"old_file_info":  event.OldFileInfo,
 					"integrity_info": event.IntegrityInfo,
 				}
-				
+
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
-				
+
 				// Analyze for threats
 				if threatEvent := analyzeFileEventForThreats(event); threatEvent != nil {
 					handleThreatEvent(threatEvent, gatewayURL)
 				}
-				
+
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
 				envelope.Event = eventMap
@@ -280,7 +282,7 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}()
-	
+
 	// Start registry monitoring
 	go func() {
 		if err := registryMonitor.Start(); err != nil {
@@ -299,10 +301,10 @@ func startMonitoring(controllerURL string) {
 					"old_value":     event.OldValue,
 					"new_value":     event.NewValue,
 				}
-				
+
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
-				
+
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
 				envelope.Event = eventMap
@@ -311,11 +313,11 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}()
-	
+
 	// Start enhanced event forwarders
 	alertChannel := threatDetector.GetAlertChannel()
 	go forwardThreatAlerts(alertChannel, controllerURL)
-	
+
 	// Start asset discovery with enhanced forwarding
 	if assetInventory != nil {
 		go func() {
@@ -356,12 +358,12 @@ func startMonitoring(controllerURL string) {
 	if queryEngine != nil {
 		go forwardQueryResults(queryEngine, controllerURL)
 	}
-	
+
 	// Start network infrastructure monitoring components
 	if snmpClient != nil {
 		log.Println("SNMP client initialized and ready for device queries")
 	}
-	
+
 	if networkScanner != nil {
 		go func() {
 			if err := networkScanner.Start(); err != nil {
@@ -371,7 +373,7 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}
-	
+
 	if syslogReceiver != nil {
 		go func() {
 			if err := syslogReceiver.Start(); err != nil {
@@ -381,7 +383,7 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}
-	
+
 	if configurationMonitor != nil {
 		go func() {
 			if err := configurationMonitor.Start(); err != nil {
@@ -391,17 +393,17 @@ func startMonitoring(controllerURL string) {
 			}
 		}()
 	}
-	
+
 	// Start ransomware canary monitoring
 	go ransomware.StartCanaryMonitoring()
-	
+
 	log.Println("All monitoring and analysis services started successfully")
 }
 
 // Stop all monitoring services
 func stopMonitoring() {
 	log.Println("Stopping monitoring services...")
-	
+
 	if processMonitor != nil {
 		processMonitor.Stop()
 	}
@@ -426,7 +428,7 @@ func stopMonitoring() {
 		// ComplianceMonitor doesn't have a StopMonitoring method
 		log.Println("ComplianceMonitor shutdown (no explicit stop method)")
 	}
-	
+
 	// Stop network infrastructure monitoring components
 	if networkScanner != nil {
 		networkScanner.Stop()
@@ -444,7 +446,7 @@ func stopMonitoring() {
 		// SNMP client doesn't need explicit stopping
 		log.Println("SNMP client shutdown")
 	}
-	
+
 	log.Println("All monitoring and analysis services stopped")
 }
 
@@ -454,10 +456,10 @@ func sendHeartbeat(interval time.Duration) {
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		evt := generateEnhancedWindowsEvent()
 		data, err := json.Marshal(evt)
@@ -465,7 +467,7 @@ func sendHeartbeat(interval time.Duration) {
 			log.Printf("Failed to marshal heartbeat event: %v", err)
 			continue
 		}
-		
+
 		log.Printf("Sending heartbeat with system telemetry")
 		sendEventToGateway(gatewayURL, data)
 	}
@@ -476,40 +478,40 @@ func main() {
 	if controllerURL == "" {
 		controllerURL = "http://localhost:8080"
 	}
-	
+
 	log.Printf("MUSAFIR Enhanced EDR/XDR/SIEM Agent starting...")
 	log.Printf("Controller URL: %s", controllerURL)
-	
+
 	// Initialize all monitoring components
 	if err := initializeMonitoring(); err != nil {
 		log.Fatalf("Failed to initialize monitoring: %v", err)
 	}
-	
+
 	// Start all monitoring services
 	startMonitoring(controllerURL)
-	
+
 	// Send initial enhanced event
 	evt := generateEnhancedWindowsEvent()
 	data, _ := json.Marshal(evt)
 	log.Printf("Sending initial enhanced telemetry event")
 	sendEventToController(controllerURL, data)
-	
+
 	// Start periodic heartbeat (every 30 seconds)
-	go sendHeartbeat(30*time.Second)
-	
+	go sendHeartbeat(30 * time.Second)
+
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	log.Println("MUSAFIR Enhanced Agent is running. Press Ctrl+C to stop.")
-	
+
 	// Wait for shutdown signal
 	<-sigChan
 	log.Println("Shutdown signal received, stopping agent...")
-	
+
 	// Stop all monitoring services
 	stopMonitoring()
-	
+
 	log.Println("MUSAFIR Enhanced Agent stopped successfully")
 }
 
@@ -518,7 +520,7 @@ func analyzeEventForThreats(event ProcessEvent) *ThreatEvent {
 	if threatDetector == nil {
 		return nil
 	}
-	
+
 	// Convert ProcessEvent to ProcessInfo for threat analysis
 	processInfo := &ProcessInfo{
 		PID:         event.ProcessInfo.PID,
@@ -530,7 +532,7 @@ func analyzeEventForThreats(event ProcessEvent) *ThreatEvent {
 		StartTime:   event.ProcessInfo.StartTime,
 		Modules:     event.ProcessInfo.Modules,
 	}
-	
+
 	return threatDetector.AnalyzeProcess(processInfo)
 }
 
@@ -538,7 +540,7 @@ func analyzeNetworkEventForThreats(event NetworkEvent) *ThreatEvent {
 	if threatDetector == nil {
 		return nil
 	}
-	
+
 	// Convert NetworkEvent to ConnectionInfo for threat analysis
 	connectionInfo := &ConnectionInfo{
 		LocalAddress:  event.ConnectionInfo.LocalAddress,
@@ -548,10 +550,9 @@ func analyzeNetworkEventForThreats(event NetworkEvent) *ThreatEvent {
 		Protocol:      event.ConnectionInfo.Protocol,
 		State:         event.ConnectionInfo.State,
 		Direction:     event.ConnectionInfo.Direction,
-		BytesSent:     event.ConnectionInfo.BytesSent,
-		BytesReceived: event.ConnectionInfo.BytesReceived,
+		CreationTime:  event.ConnectionInfo.CreationTime,
 	}
-	
+
 	return threatDetector.AnalyzeNetwork(connectionInfo)
 }
 
@@ -559,20 +560,19 @@ func analyzeFileEventForThreats(event FileEvent) *ThreatEvent {
 	if threatDetector == nil {
 		return nil
 	}
-	
+
 	// Convert FileEvent to FileInfo for threat analysis
 	fileInfo := &FileInfo{
-		Path:         event.FileInfo.Path,
-		Name:         event.FileInfo.Name,
-		Size:         event.FileInfo.Size,
-		Hash:         event.FileInfo.Hash,
-		Permissions:  event.FileInfo.Permissions,
-		Owner:        event.FileInfo.Owner,
-		CreatedTime:  event.FileInfo.CreatedTime,
-		ModifiedTime: event.FileInfo.ModifiedTime,
-		AccessedTime: event.FileInfo.AccessedTime,
+		Path:        event.FileInfo.Path,
+		Name:        event.FileInfo.Name,
+		Size:        event.FileInfo.Size,
+		ModTime:     event.FileInfo.ModTime,
+		IsDir:       event.FileInfo.IsDir,
+		Hash:        event.FileInfo.Hash,
+		Owner:       event.FileInfo.Owner,
+		Permissions: event.FileInfo.Permissions,
 	}
-	
+
 	return threatDetector.AnalyzeFile(fileInfo)
 }
 
@@ -580,11 +580,11 @@ func handleThreatEvent(threatEvent *ThreatEvent, gatewayURL string) {
 	if threatEvent == nil {
 		return
 	}
-	
+
 	// Log the threat detection
-	log.Printf("THREAT DETECTED: %s - %s (Confidence: %.2f)", 
+	log.Printf("THREAT DETECTED: %s - %s (Confidence: %.2f)",
 		threatEvent.EventType, threatEvent.ThreatLevel, threatEvent.Confidence)
-	
+
 	// Create threat alert
 	alert := ThreatAlert{
 		ID:          fmt.Sprintf("alert-%d", time.Now().Unix()),
@@ -595,24 +595,24 @@ func handleThreatEvent(threatEvent *ThreatEvent, gatewayURL string) {
 		Source:      "musafir-agent",
 		Event:       threatEvent.Evidence,
 		Metadata: map[string]interface{}{
-			"confidence":    threatEvent.Confidence,
+			"confidence":     threatEvent.Confidence,
 			"detection_time": threatEvent.Timestamp,
 		},
 	}
-	
+
 	// Add IOC or rule information
 	if threatEvent.IOCMatched != nil {
 		alert.IOC = threatEvent.IOCMatched
-		alert.Description = fmt.Sprintf("IOC Match: %s (%s)", 
+		alert.Description = fmt.Sprintf("IOC Match: %s (%s)",
 			threatEvent.IOCMatched.Value, threatEvent.IOCMatched.Type)
 	}
-	
+
 	if threatEvent.BehaviorRule != nil {
 		alert.Rule = threatEvent.BehaviorRule
-		alert.Description = fmt.Sprintf("Behavior Rule: %s", 
+		alert.Description = fmt.Sprintf("Behavior Rule: %s",
 			threatEvent.BehaviorRule.Name)
 	}
-	
+
 	// Send alert to gateway
 	envelope := generateEnhancedWindowsEvent()
 	envelope.Event = map[string]interface{}{
@@ -622,13 +622,13 @@ func handleThreatEvent(threatEvent *ThreatEvent, gatewayURL string) {
 		"threat_alert": alert,
 		"threat_event": threatEvent,
 	}
-	
+
 	data, err := json.Marshal(envelope)
 	if err != nil {
 		log.Printf("Error marshaling threat alert: %v", err)
 		return
 	}
-	
+
 	sendEventToGateway(gatewayURL, data)
 	log.Printf("Threat alert sent to gateway: %s", alert.ID)
 }
@@ -637,14 +637,14 @@ func generateThreatDescription(threatEvent *ThreatEvent) string {
 	switch threatEvent.EventType {
 	case "ioc_match":
 		if threatEvent.IOCMatched != nil {
-			return fmt.Sprintf("Detected IOC: %s (%s) - %s", 
-				threatEvent.IOCMatched.Value, 
+			return fmt.Sprintf("Detected IOC: %s (%s) - %s",
+				threatEvent.IOCMatched.Value,
 				threatEvent.IOCMatched.Type,
 				threatEvent.IOCMatched.Description)
 		}
 	case "behavioral_detection":
 		if threatEvent.BehaviorRule != nil {
-			return fmt.Sprintf("Suspicious behavior detected: %s - %s", 
+			return fmt.Sprintf("Suspicious behavior detected: %s - %s",
 				threatEvent.BehaviorRule.Name,
 				threatEvent.BehaviorRule.Description)
 		}

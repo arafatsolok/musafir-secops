@@ -20,7 +20,7 @@ func forwardThreatAlerts(alertChannel <-chan ThreatAlert, gatewayURL string) {
 			Event:    map[string]interface{}{"type": "threat_alert"},
 			Ingest:   map[string]string{"source": "agent"},
 		}
-		
+
 		// Add threat alert data to Event field
 		envelope.Event["alert_id"] = alert.ID
 		envelope.Event["threat_type"] = alert.ThreatType
@@ -29,13 +29,13 @@ func forwardThreatAlerts(alertChannel <-chan ThreatAlert, gatewayURL string) {
 		envelope.Event["source"] = alert.Source
 		envelope.Event["timestamp"] = alert.Timestamp.Format(time.RFC3339)
 		envelope.Event["metadata"] = alert.Metadata
-		
+
 		data, err := json.Marshal(envelope)
 		if err != nil {
 			log.Printf("Failed to marshal threat alert: %v", err)
 			continue
 		}
-		
+
 		log.Printf("Forwarding threat alert: %s (Severity: %s)", alert.ID, alert.Severity)
 		sendEventToGateway(gatewayURL, data)
 	}
@@ -45,10 +45,10 @@ func forwardThreatAlerts(alertChannel <-chan ThreatAlert, gatewayURL string) {
 func forwardAssetUpdates(assetInventory *AssetInventory, gatewayURL string) {
 	ticker := time.NewTicker(15 * time.Minute) // Send asset updates every 15 minutes
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		assets := assetInventory.GetAssets()
-		
+
 		for _, asset := range assets {
 			envelope := Envelope{
 				Ts:       strconv.FormatInt(time.Now().Unix(), 10),
@@ -58,7 +58,7 @@ func forwardAssetUpdates(assetInventory *AssetInventory, gatewayURL string) {
 				Event:    map[string]interface{}{"type": "asset_inventory"},
 				Ingest:   map[string]string{"source": "agent"},
 			}
-			
+
 			// Add asset data to Event field
 			envelope.Event["asset_id"] = asset.ID
 			envelope.Event["asset_name"] = asset.Name
@@ -76,13 +76,13 @@ func forwardAssetUpdates(assetInventory *AssetInventory, gatewayURL string) {
 			envelope.Event["first_discovered"] = asset.FirstDiscovered.Format(time.RFC3339)
 			envelope.Event["tags"] = asset.Tags
 			envelope.Event["metadata"] = asset.Metadata
-			
+
 			data, err := json.Marshal(envelope)
 			if err != nil {
 				log.Printf("Failed to marshal asset data: %v", err)
 				continue
 			}
-			
+
 			log.Printf("Forwarding asset inventory update: %s (%s)", asset.Name, asset.Type)
 			sendEventToGateway(gatewayURL, data)
 		}
@@ -93,10 +93,10 @@ func forwardAssetUpdates(assetInventory *AssetInventory, gatewayURL string) {
 func forwardComplianceReports(complianceMonitor *ComplianceMonitor, gatewayURL string) {
 	ticker := time.NewTicker(1 * time.Hour) // Send compliance reports every hour
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		report := complianceMonitor.GetComplianceReport() // Get current compliance report
-		
+
 		envelope := Envelope{
 			Ts:       strconv.FormatInt(time.Now().Unix(), 10),
 			TenantID: "default",
@@ -105,7 +105,7 @@ func forwardComplianceReports(complianceMonitor *ComplianceMonitor, gatewayURL s
 			Event:    map[string]interface{}{"type": "compliance_report"},
 			Ingest:   map[string]string{"source": "agent"},
 		}
-			
+
 		// Add compliance report data to Event field
 		envelope.Event["timestamp"] = report.Timestamp.Format(time.RFC3339)
 		envelope.Event["overall_score"] = report.OverallScore
@@ -115,13 +115,13 @@ func forwardComplianceReports(complianceMonitor *ComplianceMonitor, gatewayURL s
 		envelope.Event["frameworks"] = report.Frameworks
 		envelope.Event["summary"] = report.Summary
 		envelope.Event["recommendations"] = report.Recommendations
-		
+
 		data, err := json.Marshal(envelope)
 		if err != nil {
 			log.Printf("Failed to marshal compliance report: %v", err)
 			continue
 		}
-		
+
 		log.Printf("Forwarding compliance report: Overall Score %.2f%%", report.OverallScore)
 		sendEventToGateway(gatewayURL, data)
 	}
@@ -131,10 +131,10 @@ func forwardComplianceReports(complianceMonitor *ComplianceMonitor, gatewayURL s
 func forwardUEBAAnomalies(uebaAnalytics *UEBAAnalytics, gatewayURL string) {
 	ticker := time.NewTicker(1 * time.Minute) // Check for anomalies every minute
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		anomalies := uebaAnalytics.GetRecentAnomalies(1) // Get anomalies from last minute
-		
+
 		for _, anomaly := range anomalies {
 			envelope := Envelope{
 				Ts:       strconv.FormatInt(time.Now().Unix(), 10),
@@ -144,7 +144,7 @@ func forwardUEBAAnomalies(uebaAnalytics *UEBAAnalytics, gatewayURL string) {
 				Event:    map[string]interface{}{"type": "ueba_anomaly"},
 				Ingest:   map[string]string{"source": "agent"},
 			}
-			
+
 			// Add UEBA anomaly data to Event field
 			envelope.Event["anomaly_id"] = anomaly.ID
 			envelope.Event["anomaly_type"] = anomaly.Type
@@ -158,17 +158,17 @@ func forwardUEBAAnomalies(uebaAnalytics *UEBAAnalytics, gatewayURL string) {
 			envelope.Event["status"] = anomaly.Status
 			envelope.Event["context"] = anomaly.Context
 			envelope.Event["timestamp"] = anomaly.Timestamp.Format(time.RFC3339)
-			
+
 			data, err := json.Marshal(envelope)
 			if err != nil {
 				log.Printf("Failed to marshal UEBA anomaly: %v", err)
 				continue
 			}
-			
+
 			log.Printf("Forwarding UEBA anomaly: %s (Score: %.2f)", anomaly.Title, anomaly.Score)
 			sendEventToGateway(gatewayURL, data)
 		}
-		
+
 		// Also send risk score updates
 		riskyUsers := uebaAnalytics.GetTopRiskyUsers(10)
 		if len(riskyUsers) > 0 {
@@ -180,17 +180,17 @@ func forwardUEBAAnomalies(uebaAnalytics *UEBAAnalytics, gatewayURL string) {
 				Event:    map[string]interface{}{"type": "ueba_risk_scores"},
 				Ingest:   map[string]string{"source": "agent"},
 			}
-			
+
 			// Add UEBA risk scores data to Event field
 			envelope.Event["risky_users"] = riskyUsers
 			envelope.Event["timestamp"] = time.Now().Format(time.RFC3339)
-			
+
 			data, err := json.Marshal(envelope)
 			if err != nil {
 				log.Printf("Failed to marshal UEBA risk scores: %v", err)
 				continue
 			}
-			
+
 			log.Printf("Forwarding UEBA risk scores for %d users", len(riskyUsers))
 			sendEventToGateway(gatewayURL, data)
 		}
@@ -201,10 +201,10 @@ func forwardUEBAAnomalies(uebaAnalytics *UEBAAnalytics, gatewayURL string) {
 func forwardForensicsData(forensicsCollector *ForensicsCollector, gatewayURL string) {
 	ticker := time.NewTicker(30 * time.Minute) // Send forensics data every 30 minutes
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		artifacts := forensicsCollector.GetArtifacts()
-		
+
 		// Send artifacts in batches to avoid overwhelming the gateway
 		batchSize := 10
 		for i := 0; i < len(artifacts); i += batchSize {
@@ -212,9 +212,9 @@ func forwardForensicsData(forensicsCollector *ForensicsCollector, gatewayURL str
 			if end > len(artifacts) {
 				end = len(artifacts)
 			}
-			
+
 			batch := artifacts[i:end]
-			
+
 			envelope := Envelope{
 				Ts:       strconv.FormatInt(time.Now().Unix(), 10),
 				TenantID: "default",
@@ -223,7 +223,7 @@ func forwardForensicsData(forensicsCollector *ForensicsCollector, gatewayURL str
 				Event:    map[string]interface{}{"type": "forensics_artifacts"},
 				Ingest:   map[string]string{"source": "agent"},
 			}
-			
+
 			// Add forensics artifacts data to Event field
 			envelope.Event["artifacts"] = batch
 			envelope.Event["batch_info"] = map[string]interface{}{
@@ -232,17 +232,17 @@ func forwardForensicsData(forensicsCollector *ForensicsCollector, gatewayURL str
 				"batch_size":    len(batch),
 			}
 			envelope.Event["timestamp"] = time.Now().Format(time.RFC3339)
-			
+
 			data, err := json.Marshal(envelope)
 			if err != nil {
 				log.Printf("Failed to marshal forensics artifacts: %v", err)
 				continue
 			}
-			
-			log.Printf("Forwarding forensics artifacts batch %d/%d (%d artifacts)", 
+
+			log.Printf("Forwarding forensics artifacts batch %d/%d (%d artifacts)",
 				(i/batchSize)+1, (len(artifacts)+batchSize-1)/batchSize, len(batch))
 			sendEventToGateway(gatewayURL, data)
-			
+
 			// Small delay between batches
 			time.Sleep(1 * time.Second)
 		}
@@ -253,9 +253,9 @@ func forwardForensicsData(forensicsCollector *ForensicsCollector, gatewayURL str
 func forwardQueryResults(queryEngine *QueryEngine, gatewayURL string) {
 	// This would be called when queries are executed
 	// For now, we'll create a placeholder that could be called by the query engine
-	
+
 	events := queryEngine.GetStoredEvents() // Get stored events
-	
+
 	if len(events) > 0 {
 		envelope := Envelope{
 			Ts:       strconv.FormatInt(time.Now().Unix(), 10),
@@ -265,18 +265,18 @@ func forwardQueryResults(queryEngine *QueryEngine, gatewayURL string) {
 			Event:    map[string]interface{}{"type": "threat_hunting_result"},
 			Ingest:   map[string]string{"source": "agent"},
 		}
-		
+
 		// Add threat hunting results data to Event field
 		envelope.Event["event_count"] = len(events)
 		envelope.Event["events"] = events
 		envelope.Event["timestamp"] = time.Now().Format(time.RFC3339)
-		
+
 		data, err := json.Marshal(envelope)
 		if err != nil {
 			log.Printf("Failed to marshal query result: %v", err)
 			return
 		}
-		
+
 		log.Printf("Forwarding threat hunting query results: %d events", len(events))
 		sendEventToGateway(gatewayURL, data)
 	}
@@ -288,7 +288,7 @@ func processEventForUEBA(event map[string]interface{}) {
 		// Add additional context to the event
 		event["timestamp"] = time.Now()
 		event["entity_id"] = getHostname()
-		
+
 		// Process the event through UEBA
 		if err := uebaAnalytics.ProcessEvent(event); err != nil {
 			log.Printf("Error processing event for UEBA: %v", err)
@@ -318,10 +318,10 @@ func processEventForQueryEngine(_ map[string]interface{}) {
 func processEventThroughAllAnalytics(event map[string]interface{}) {
 	// Process through UEBA
 	processEventForUEBA(event)
-	
+
 	// Process through threat detection
 	processEventForThreatDetection(event)
-	
+
 	// Index for threat hunting
 	processEventForQueryEngine(event)
 }

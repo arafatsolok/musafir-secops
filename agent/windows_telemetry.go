@@ -15,21 +15,22 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
+
 // TelemetryCollector gathers comprehensive system telemetry
 type TelemetryCollector struct {
 }
 
 // SystemTelemetry represents comprehensive system information
 type SystemTelemetry struct {
-	Timestamp    time.Time            `json:"timestamp"`
-	OS           OSInfo               `json:"os"`
-	Hardware     HardwareInfo         `json:"hardware"`
-	Network      []NetworkConnection  `json:"network"`
-	Processes    []ProcessInfo        `json:"processes"`
-	Services     []ServiceInfo        `json:"services"`
-	Software     []SoftwareInfo       `json:"software"`
-	Performance  PerformanceMetrics   `json:"performance"`
-	Security     SecurityMetrics      `json:"security"`
+	Timestamp   time.Time           `json:"timestamp"`
+	OS          OSInfo              `json:"os"`
+	Hardware    HardwareInfo        `json:"hardware"`
+	Network     []NetworkConnection `json:"network"`
+	Processes   []ProcessInfo       `json:"processes"`
+	Services    []ServiceInfo       `json:"services"`
+	Software    []SoftwareInfo      `json:"software"`
+	Performance PerformanceMetrics  `json:"performance"`
+	Security    SecurityMetrics     `json:"security"`
 }
 
 type PerformanceMetrics struct {
@@ -52,16 +53,16 @@ type PerformanceMetrics struct {
 }
 
 type SecurityMetrics struct {
-	AntivirusStatus    string    `json:"antivirus_status"`
-	FirewallStatus     string    `json:"firewall_status"`
-	WindowsUpdateStatus string   `json:"windows_update_status"`
-	LastSecurityScan   time.Time `json:"last_security_scan"`
-	ThreatCount        int       `json:"threat_count"`
-	QuarantineCount    int       `json:"quarantine_count"`
-	DefenderStatus     string    `json:"defender_status"`
-	UAC                bool      `json:"uac_enabled"`
-	BitLockerStatus    string    `json:"bitlocker_status"`
-	EncryptionStatus   string    `json:"encryption_status"`
+	AntivirusStatus     string    `json:"antivirus_status"`
+	FirewallStatus      string    `json:"firewall_status"`
+	WindowsUpdateStatus string    `json:"windows_update_status"`
+	LastSecurityScan    time.Time `json:"last_security_scan"`
+	ThreatCount         int       `json:"threat_count"`
+	QuarantineCount     int       `json:"quarantine_count"`
+	DefenderStatus      string    `json:"defender_status"`
+	UAC                 bool      `json:"uac_enabled"`
+	BitLockerStatus     string    `json:"bitlocker_status"`
+	EncryptionStatus    string    `json:"encryption_status"`
 }
 
 type UserSession struct {
@@ -76,12 +77,12 @@ type UserSession struct {
 }
 
 type EventLogSummary struct {
-	Source      string `json:"source"`
-	Level       string `json:"level"`
-	EventID     uint32 `json:"event_id"`
-	Count       int    `json:"count"`
+	Source      string    `json:"source"`
+	Level       string    `json:"level"`
+	EventID     uint32    `json:"event_id"`
+	Count       int       `json:"count"`
 	LastOccured time.Time `json:"last_occurred"`
-	Description string `json:"description"`
+	Description string    `json:"description"`
 }
 
 type RegistryChange struct {
@@ -114,17 +115,17 @@ type StartupProgram struct {
 
 // Enhanced Windows telemetry structures for EDR/XDR/SIEM
 type SystemInfo struct {
-	Hostname        string            `json:"hostname"`
-	Domain          string            `json:"domain"`
-	OS              OSInfo            `json:"os"`
-	Hardware        HardwareInfo      `json:"hardware"`
-	Network         NetworkInfo       `json:"network"`
-	Security        SecurityInfo      `json:"security"`
-	Performance     PerformanceInfo   `json:"performance"`
-	InstalledSoftware []SoftwareInfo  `json:"installed_software"`
-	Services        []ServiceInfo     `json:"services"`
-	Users           []UserInfo        `json:"users"`
-	Environment     map[string]string `json:"environment"`
+	Hostname          string            `json:"hostname"`
+	Domain            string            `json:"domain"`
+	OS                OSInfo            `json:"os"`
+	Hardware          HardwareInfo      `json:"hardware"`
+	Network           NetworkInfo       `json:"network"`
+	Security          SecurityInfo      `json:"security"`
+	Performance       PerformanceInfo   `json:"performance"`
+	InstalledSoftware []SoftwareInfo    `json:"installed_software"`
+	Services          []ServiceInfo     `json:"services"`
+	Users             []UserInfo        `json:"users"`
+	Environment       map[string]string `json:"environment"`
 }
 
 // DiskInfo represents disk information specific to telemetry
@@ -149,46 +150,46 @@ type NetworkCard struct {
 }
 
 type NetworkInfo struct {
-	Interfaces    []TelemetryNetworkInterface `json:"interfaces"`
-	Connections   []NetworkConnection `json:"connections"`
-	DNSServers    []string           `json:"dns_servers"`
-	DefaultGateway string            `json:"default_gateway"`
-	PublicIP      string             `json:"public_ip"`
+	Interfaces     []TelemetryNetworkInterface `json:"interfaces"`
+	Connections    []NetworkConnection         `json:"connections"`
+	DNSServers     []string                    `json:"dns_servers"`
+	DefaultGateway string                      `json:"default_gateway"`
+	PublicIP       string                      `json:"public_ip"`
 }
 
 // TelemetryNetworkInterface represents network interface information for telemetry
 type TelemetryNetworkInterface struct {
-	Name         string   `json:"name"`
-	Type         string   `json:"type"`
-	Status       string   `json:"status"`
-	MACAddress   string   `json:"mac_address"`
-	IPAddresses  []string `json:"ip_addresses"`
-	BytesSent    uint64   `json:"bytes_sent"`
-	BytesReceived uint64  `json:"bytes_received"`
+	Name          string   `json:"name"`
+	Type          string   `json:"type"`
+	Status        string   `json:"status"`
+	MACAddress    string   `json:"mac_address"`
+	IPAddresses   []string `json:"ip_addresses"`
+	BytesSent     uint64   `json:"bytes_sent"`
+	BytesReceived uint64   `json:"bytes_received"`
 }
 
 type SecurityInfo struct {
-	AntivirusStatus    []AntivirusInfo `json:"antivirus_status"`
-	FirewallStatus     FirewallInfo    `json:"firewall_status"`
-	WindowsDefender    DefenderInfo    `json:"windows_defender"`
-	UAC                UACInfo         `json:"uac"`
-	BitLockerStatus    []BitLockerInfo `json:"bitlocker_status"`
-	CertificateStores  []CertInfo      `json:"certificate_stores"`
-	SecurityPolicies   []PolicyInfo    `json:"security_policies"`
+	AntivirusStatus   []AntivirusInfo `json:"antivirus_status"`
+	FirewallStatus    FirewallInfo    `json:"firewall_status"`
+	WindowsDefender   DefenderInfo    `json:"windows_defender"`
+	UAC               UACInfo         `json:"uac"`
+	BitLockerStatus   []BitLockerInfo `json:"bitlocker_status"`
+	CertificateStores []CertInfo      `json:"certificate_stores"`
+	SecurityPolicies  []PolicyInfo    `json:"security_policies"`
 }
 
 type AntivirusInfo struct {
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	Version        string `json:"version"`
-	LastUpdate     string `json:"last_update"`
-	RealTimeProtection bool `json:"real_time_protection"`
+	Name               string `json:"name"`
+	Status             string `json:"status"`
+	Version            string `json:"version"`
+	LastUpdate         string `json:"last_update"`
+	RealTimeProtection bool   `json:"real_time_protection"`
 }
 
 type FirewallInfo struct {
-	DomainProfile  string `json:"domain_profile"`
-	PrivateProfile string `json:"private_profile"`
-	PublicProfile  string `json:"public_profile"`
+	DomainProfile  string         `json:"domain_profile"`
+	PrivateProfile string         `json:"private_profile"`
+	PublicProfile  string         `json:"public_profile"`
 	Rules          []FirewallRule `json:"rules"`
 }
 
@@ -223,13 +224,13 @@ type BitLockerInfo struct {
 }
 
 type CertInfo struct {
-	Store       string `json:"store"`
-	Subject     string `json:"subject"`
-	Issuer      string `json:"issuer"`
-	Thumbprint  string `json:"thumbprint"`
-	NotBefore   string `json:"not_before"`
-	NotAfter    string `json:"not_after"`
-	KeyUsage    string `json:"key_usage"`
+	Store      string `json:"store"`
+	Subject    string `json:"subject"`
+	Issuer     string `json:"issuer"`
+	Thumbprint string `json:"thumbprint"`
+	NotBefore  string `json:"not_before"`
+	NotAfter   string `json:"not_after"`
+	KeyUsage   string `json:"key_usage"`
 }
 
 type PolicyInfo struct {
@@ -240,33 +241,33 @@ type PolicyInfo struct {
 }
 
 type PerformanceInfo struct {
-	CPUUsage    float64           `json:"cpu_usage_percent"`
-	MemoryUsage float64           `json:"memory_usage_percent"`
-	DiskUsage   map[string]float64 `json:"disk_usage_percent"`
-	NetworkIO   NetworkIOStats    `json:"network_io"`
-	ProcessCount int              `json:"process_count"`
-	ThreadCount  int              `json:"thread_count"`
-	HandleCount  int              `json:"handle_count"`
-	Uptime       int64            `json:"uptime_seconds"`
+	CPUUsage     float64            `json:"cpu_usage_percent"`
+	MemoryUsage  float64            `json:"memory_usage_percent"`
+	DiskUsage    map[string]float64 `json:"disk_usage_percent"`
+	NetworkIO    NetworkIOStats     `json:"network_io"`
+	ProcessCount int                `json:"process_count"`
+	ThreadCount  int                `json:"thread_count"`
+	HandleCount  int                `json:"handle_count"`
+	Uptime       int64              `json:"uptime_seconds"`
 }
 
 type NetworkIOStats struct {
-	BytesSentPerSec     uint64 `json:"bytes_sent_per_sec"`
-	BytesReceivedPerSec uint64 `json:"bytes_received_per_sec"`
-	PacketsSentPerSec   uint64 `json:"packets_sent_per_sec"`
+	BytesSentPerSec       uint64 `json:"bytes_sent_per_sec"`
+	BytesReceivedPerSec   uint64 `json:"bytes_received_per_sec"`
+	PacketsSentPerSec     uint64 `json:"packets_sent_per_sec"`
 	PacketsReceivedPerSec uint64 `json:"packets_received_per_sec"`
 }
 
 type UserInfo struct {
-	Name         string   `json:"name"`
-	FullName     string   `json:"full_name"`
-	SID          string   `json:"sid"`
-	AccountType  string   `json:"account_type"`
-	Enabled      bool     `json:"enabled"`
-	LastLogon    string   `json:"last_logon"`
-	Groups       []string `json:"groups"`
-	Privileges   []string `json:"privileges"`
-	ProfilePath  string   `json:"profile_path"`
+	Name        string   `json:"name"`
+	FullName    string   `json:"full_name"`
+	SID         string   `json:"sid"`
+	AccountType string   `json:"account_type"`
+	Enabled     bool     `json:"enabled"`
+	LastLogon   string   `json:"last_logon"`
+	Groups      []string `json:"groups"`
+	Privileges  []string `json:"privileges"`
+	ProfilePath string   `json:"profile_path"`
 }
 
 type ProcessIOCounters struct {
@@ -292,17 +293,17 @@ type RegistryAccessInfo struct {
 }
 
 type ProcessSecurityContext struct {
-	IntegrityLevel string   `json:"integrity_level"`
-	Privileges     []string `json:"privileges"`
-	TokenType      string   `json:"token_type"`
-	Elevated       bool     `json:"elevated"`
-	VirtualizationEnabled bool `json:"virtualization_enabled"`
+	IntegrityLevel        string   `json:"integrity_level"`
+	Privileges            []string `json:"privileges"`
+	TokenType             string   `json:"token_type"`
+	Elevated              bool     `json:"elevated"`
+	VirtualizationEnabled bool     `json:"virtualization_enabled"`
 }
 
 // Collect comprehensive system information
 func CollectSystemInfo() (*SystemInfo, error) {
 	hostname, _ := os.Hostname()
-	
+
 	sysInfo := &SystemInfo{
 		Hostname:    hostname,
 		Environment: make(map[string]string),
@@ -310,28 +311,28 @@ func CollectSystemInfo() (*SystemInfo, error) {
 
 	// Collect OS information
 	sysInfo.OS = collectOSInfo()
-	
+
 	// Collect hardware information
 	sysInfo.Hardware = collectHardwareInfo()
-	
+
 	// Collect network information
 	sysInfo.Network = collectNetworkInfo()
-	
+
 	// Collect security information
 	sysInfo.Security = collectSecurityInfo()
-	
+
 	// Collect performance information
 	sysInfo.Performance = collectPerformanceInfo()
-	
+
 	// Collect installed software
 	sysInfo.InstalledSoftware = collectInstalledSoftware()
-	
+
 	// Collect services
 	sysInfo.Services = collectServices()
-	
+
 	// Collect users
 	sysInfo.Users = collectUsers()
-	
+
 	// Collect environment variables
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", 2)
@@ -369,10 +370,10 @@ func collectOSInfo() OSInfo {
 
 func collectHardwareInfo() HardwareInfo {
 	hardware := HardwareInfo{
-		CPU:    collectCPUInfo(),
-		Memory: collectMemoryInfo(),
+		CPU:     collectCPUInfo(),
+		Memory:  collectMemoryInfo(),
 		Storage: collectDiskInfo(),
-		BIOS:   collectBIOSInfo(),
+		BIOS:    collectBIOSInfo(),
 	}
 
 	return hardware
@@ -408,13 +409,13 @@ func collectMemoryInfo() MemoryInfo {
 
 	var memStatus MEMORYSTATUSEX
 	memStatus.Length = uint32(unsafe.Sizeof(memStatus))
-	
+
 	// Use GlobalMemoryStatusEx from kernel32.dll
 	kernel32 := windows.NewLazyDLL("kernel32.dll")
 	globalMemoryStatusEx := kernel32.NewProc("GlobalMemoryStatusEx")
 
 	ret, _, _ := globalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus)))
-	
+
 	if ret != 0 {
 		return MemoryInfo{
 			Total:     memStatus.TotalPhys,
@@ -429,7 +430,7 @@ func collectMemoryInfo() MemoryInfo {
 
 func collectDiskInfo() []StorageInfo {
 	var disks []StorageInfo
-	
+
 	drives := getDriveLetters()
 	for _, drive := range drives {
 		if diskInfo := getDiskInfo(drive); diskInfo != nil {
@@ -459,7 +460,7 @@ func collectNetworkInfo() NetworkInfo {
 
 func collectNetworkInterfaces() []TelemetryNetworkInterface {
 	var interfaces []TelemetryNetworkInterface
-	
+
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return interfaces
@@ -496,7 +497,7 @@ func collectSecurityInfo() SecurityInfo {
 		AntivirusStatus: collectAntivirusInfo(),
 		FirewallStatus:  collectFirewallInfo(),
 		WindowsDefender: collectDefenderInfo(),
-		UAC:            collectUACInfo(),
+		UAC:             collectUACInfo(),
 	}
 
 	return security
@@ -530,7 +531,7 @@ func collectPerformanceInfo() PerformanceInfo {
 
 func collectInstalledSoftware() []SoftwareInfo {
 	var software []SoftwareInfo
-	
+
 	// Read from registry uninstall keys
 	software = append(software, readUninstallRegistry(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`)...)
 	software = append(software, readUninstallRegistry(registry.LOCAL_MACHINE, `SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall`)...)
@@ -614,14 +615,14 @@ func getDriveLetters() []string {
 
 func getDiskInfo(drive string) *StorageInfo {
 	var freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes uint64
-	
+
 	drivePtr := windows.StringToUTF16Ptr(drive + "\\")
 	err := windows.GetDiskFreeSpaceEx(drivePtr, &freeBytesAvailable, &totalNumberOfBytes, &totalNumberOfFreeBytes)
 	if err != nil {
 		return nil
 	}
 
-	usagePercent := float64(totalNumberOfBytes - totalNumberOfFreeBytes) / float64(totalNumberOfBytes) * 100
+	usagePercent := float64(totalNumberOfBytes-totalNumberOfFreeBytes) / float64(totalNumberOfBytes) * 100
 
 	return &StorageInfo{
 		Device:     drive,

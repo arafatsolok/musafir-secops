@@ -30,14 +30,14 @@ type ComplianceFrameworkConfig struct {
 
 // ComplianceControlConfig defines a compliance control configuration
 type ComplianceControlConfig struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Severity    string   `json:"severity"`
-	Category    string   `json:"category"`
-	CheckType   string   `json:"check_type"` // registry, file, service, policy, wmi
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Severity    string    `json:"severity"`
+	Category    string    `json:"category"`
+	CheckType   string    `json:"check_type"` // registry, file, service, policy, wmi
 	CheckData   CheckData `json:"check_data"`
-	Remediation string   `json:"remediation"`
+	Remediation string    `json:"remediation"`
 }
 
 // CheckData contains the data needed to perform a compliance check
@@ -59,17 +59,17 @@ type RegistryCheck struct {
 
 // FileCheck defines a file-based compliance check
 type FileCheck struct {
-	Path         string            `json:"path"`
-	CheckType    string            `json:"check_type"` // exists, not_exists, permissions, content
-	Permissions  string            `json:"permissions,omitempty"`
-	Content      string            `json:"content,omitempty"`
-	Attributes   map[string]string `json:"attributes,omitempty"`
+	Path        string            `json:"path"`
+	CheckType   string            `json:"check_type"` // exists, not_exists, permissions, content
+	Permissions string            `json:"permissions,omitempty"`
+	Content     string            `json:"content,omitempty"`
+	Attributes  map[string]string `json:"attributes,omitempty"`
 }
 
 // ServiceCheck defines a service-based compliance check
 type ServiceCheck struct {
-	Name         string `json:"name"`
-	ExpectedState string `json:"expected_state"` // running, stopped, disabled
+	Name          string `json:"name"`
+	ExpectedState string `json:"expected_state"`         // running, stopped, disabled
 	StartupType   string `json:"startup_type,omitempty"` // automatic, manual, disabled
 }
 
@@ -82,23 +82,23 @@ type PolicyCheck struct {
 
 // WMICheck defines a WMI-based compliance check
 type WMICheck struct {
-	Class     string `json:"class"`
-	Property  string `json:"property"`
-	Filter    string `json:"filter,omitempty"`
-	Expected  string `json:"expected"`
-	Operator  string `json:"operator"`
+	Class    string `json:"class"`
+	Property string `json:"property"`
+	Filter   string `json:"filter,omitempty"`
+	Expected string `json:"expected"`
+	Operator string `json:"operator"`
 }
 
 // ComplianceReport represents a compliance assessment report
 type ComplianceReport struct {
-	Timestamp      time.Time                        `json:"timestamp"`
-	OverallScore   float64                          `json:"overall_score"`
-	TotalControls  int                              `json:"total_controls"`
-	PassedControls int                              `json:"passed_controls"`
-	FailedControls int                              `json:"failed_controls"`
-	Frameworks     []ComplianceFrameworkResult      `json:"frameworks"`
-	Summary        ComplianceSummary                `json:"summary"`
-	Recommendations []ComplianceRecommendation      `json:"recommendations"`
+	Timestamp       time.Time                   `json:"timestamp"`
+	OverallScore    float64                     `json:"overall_score"`
+	TotalControls   int                         `json:"total_controls"`
+	PassedControls  int                         `json:"passed_controls"`
+	FailedControls  int                         `json:"failed_controls"`
+	Frameworks      []ComplianceFrameworkResult `json:"frameworks"`
+	Summary         ComplianceSummary           `json:"summary"`
+	Recommendations []ComplianceRecommendation  `json:"recommendations"`
 }
 
 // ComplianceFrameworkResult represents results for a specific framework
@@ -144,12 +144,12 @@ type CategorySummary struct {
 
 // ComplianceRecommendation provides remediation recommendations
 type ComplianceRecommendation struct {
-	Priority    string `json:"priority"`
-	Category    string `json:"category"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Impact      string `json:"impact"`
-	Effort      string `json:"effort"`
+	Priority    string   `json:"priority"`
+	Category    string   `json:"category"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Impact      string   `json:"impact"`
+	Effort      string   `json:"effort"`
 	Steps       []string `json:"steps"`
 }
 
@@ -159,10 +159,10 @@ func NewComplianceMonitor() *ComplianceMonitor {
 		frameworks:    make(map[string]ComplianceFrameworkConfig),
 		checkInterval: 24 * time.Hour, // Daily compliance checks
 	}
-	
+
 	// Initialize with default frameworks
 	cm.initializeDefaultFrameworks()
-	
+
 	return cm
 }
 
@@ -176,7 +176,7 @@ func (cm *ComplianceMonitor) initializeDefaultFrameworks() {
 		Controls:    cm.getCISControls(),
 	}
 	cm.frameworks["CIS"] = cisFramework
-	
+
 	// NIST Cybersecurity Framework
 	nistFramework := ComplianceFrameworkConfig{
 		Name:        "NIST",
@@ -185,7 +185,7 @@ func (cm *ComplianceMonitor) initializeDefaultFrameworks() {
 		Controls:    cm.getNISTControls(),
 	}
 	cm.frameworks["NIST"] = nistFramework
-	
+
 	// SOC 2 Type II
 	soc2Framework := ComplianceFrameworkConfig{
 		Name:        "SOC2",
@@ -258,7 +258,7 @@ func (cm *ComplianceMonitor) getCISControls() []ComplianceControlConfig {
 			CheckType:   "service",
 			CheckData: CheckData{
 				Service: ServiceCheck{
-					Name:         "Spooler",
+					Name:          "Spooler",
 					ExpectedState: "stopped",
 					StartupType:   "disabled",
 				},
@@ -336,7 +336,7 @@ func (cm *ComplianceMonitor) getSOC2Controls() []ComplianceControlConfig {
 			CheckType:   "service",
 			CheckData: CheckData{
 				Service: ServiceCheck{
-					Name:         "Windows Defender Antivirus Service",
+					Name:          "Windows Defender Antivirus Service",
 					ExpectedState: "running",
 					StartupType:   "automatic",
 				},
@@ -366,7 +366,7 @@ func (cm *ComplianceMonitor) getSOC2Controls() []ComplianceControlConfig {
 // RunComplianceCheck performs a comprehensive compliance check
 func (cm *ComplianceMonitor) RunComplianceCheck() error {
 	log.Println("Starting comprehensive compliance check...")
-	
+
 	report := ComplianceReport{
 		Timestamp:  time.Now(),
 		Frameworks: make([]ComplianceFrameworkResult, 0),
@@ -374,34 +374,34 @@ func (cm *ComplianceMonitor) RunComplianceCheck() error {
 			Categories: make(map[string]CategorySummary),
 		},
 	}
-	
+
 	totalControls := 0
 	passedControls := 0
-	
+
 	// Check each framework
 	for _, framework := range cm.frameworks {
 		frameworkResult := cm.checkFramework(framework)
 		report.Frameworks = append(report.Frameworks, frameworkResult)
-		
+
 		totalControls += frameworkResult.TotalControls
 		passedControls += frameworkResult.PassedControls
-		
+
 		// Update category summaries
 		for _, control := range frameworkResult.Controls {
 			category := control.Category
 			if _, exists := report.Summary.Categories[category]; !exists {
 				report.Summary.Categories[category] = CategorySummary{}
 			}
-			
+
 			catSummary := report.Summary.Categories[category]
 			catSummary.TotalControls++
-			
+
 			switch control.Status {
 			case "compliant":
 				catSummary.PassedControls++
 			case "non_compliant":
 				catSummary.FailedControls++
-				
+
 				// Count findings by severity
 				switch control.Severity {
 				case "critical":
@@ -414,33 +414,33 @@ func (cm *ComplianceMonitor) RunComplianceCheck() error {
 					report.Summary.LowFindings++
 				}
 			}
-			
+
 			if catSummary.TotalControls > 0 {
 				catSummary.Score = float64(catSummary.PassedControls) / float64(catSummary.TotalControls) * 100
 			}
-			
+
 			report.Summary.Categories[category] = catSummary
 		}
 	}
-	
+
 	// Calculate overall score
 	if totalControls > 0 {
 		report.OverallScore = float64(passedControls) / float64(totalControls) * 100
 	}
-	
+
 	report.TotalControls = totalControls
 	report.PassedControls = passedControls
 	report.FailedControls = totalControls - passedControls
-	
+
 	// Generate recommendations
 	report.Recommendations = cm.generateRecommendations(report)
-	
+
 	cm.complianceReport = report
 	cm.lastCheck = time.Now()
-	
+
 	log.Printf("Compliance check completed. Overall score: %.2f%% (%d/%d controls passed)",
 		report.OverallScore, passedControls, totalControls)
-	
+
 	return nil
 }
 
@@ -451,11 +451,11 @@ func (cm *ComplianceMonitor) checkFramework(framework ComplianceFrameworkConfig)
 		Version:  framework.Version,
 		Controls: make([]ComplianceControlResult, 0),
 	}
-	
+
 	for _, control := range framework.Controls {
 		controlResult := cm.checkControl(control)
 		result.Controls = append(result.Controls, controlResult)
-		
+
 		result.TotalControls++
 		switch controlResult.Status {
 		case "compliant":
@@ -464,12 +464,12 @@ func (cm *ComplianceMonitor) checkFramework(framework ComplianceFrameworkConfig)
 			result.FailedControls++
 		}
 	}
-	
+
 	// Calculate framework score
 	if result.TotalControls > 0 {
 		result.Score = float64(result.PassedControls) / float64(result.TotalControls) * 100
 	}
-	
+
 	return result
 }
 
@@ -483,7 +483,7 @@ func (cm *ComplianceMonitor) checkControl(control ComplianceControlConfig) Compl
 		Remediation: control.Remediation,
 		CheckTime:   time.Now(),
 	}
-	
+
 	switch control.CheckType {
 	case "registry":
 		result = cm.checkRegistryControl(control, result)
@@ -499,18 +499,18 @@ func (cm *ComplianceMonitor) checkControl(control ComplianceControlConfig) Compl
 		result.Status = "error"
 		result.Message = "Unknown check type: " + control.CheckType
 	}
-	
+
 	return result
 }
 
 // checkRegistryControl performs a registry-based compliance check
 func (cm *ComplianceMonitor) checkRegistryControl(control ComplianceControlConfig, result ComplianceControlResult) ComplianceControlResult {
 	regCheck := control.CheckData.Registry
-	
+
 	// Use reg query command to check registry value
 	cmd := exec.Command("reg", "query", regCheck.Key, "/v", regCheck.Value)
 	output, err := cmd.Output()
-	
+
 	if err != nil {
 		if regCheck.Operator == "not_exists" {
 			result.Status = "compliant"
@@ -521,11 +521,11 @@ func (cm *ComplianceMonitor) checkRegistryControl(control ComplianceControlConfi
 		}
 		return result
 	}
-	
+
 	// Parse registry output
 	outputStr := string(output)
 	result.Evidence = outputStr
-	
+
 	// Extract value from output
 	lines := strings.Split(outputStr, "\n")
 	var actualValue string
@@ -538,39 +538,39 @@ func (cm *ComplianceMonitor) checkRegistryControl(control ComplianceControlConfi
 			break
 		}
 	}
-	
+
 	// Compare values based on operator
 	compliant := cm.compareValues(actualValue, regCheck.ExpectedValue, regCheck.Operator)
-	
+
 	if compliant {
 		result.Status = "compliant"
 		result.Message = fmt.Sprintf("Registry value '%s' is compliant (actual: %s)", regCheck.Value, actualValue)
 	} else {
 		result.Status = "non_compliant"
-		result.Message = fmt.Sprintf("Registry value '%s' is non-compliant (actual: %s, expected: %v)", 
+		result.Message = fmt.Sprintf("Registry value '%s' is non-compliant (actual: %s, expected: %v)",
 			regCheck.Value, actualValue, regCheck.ExpectedValue)
 	}
-	
+
 	return result
 }
 
 // checkServiceControl performs a service-based compliance check
 func (cm *ComplianceMonitor) checkServiceControl(control ComplianceControlConfig, result ComplianceControlResult) ComplianceControlResult {
 	serviceCheck := control.CheckData.Service
-	
+
 	// Query service status
 	cmd := exec.Command("sc", "query", serviceCheck.Name)
 	output, err := cmd.Output()
-	
+
 	if err != nil {
 		result.Status = "error"
 		result.Message = "Service not found: " + serviceCheck.Name
 		return result
 	}
-	
+
 	outputStr := string(output)
 	result.Evidence = outputStr
-	
+
 	// Check service state
 	var actualState string
 	if strings.Contains(outputStr, "RUNNING") {
@@ -580,7 +580,7 @@ func (cm *ComplianceMonitor) checkServiceControl(control ComplianceControlConfig
 	} else {
 		actualState = "unknown"
 	}
-	
+
 	// Check startup type if specified
 	startupCompliant := true
 	if serviceCheck.StartupType != "" {
@@ -589,7 +589,7 @@ func (cm *ComplianceMonitor) checkServiceControl(control ComplianceControlConfig
 		if err == nil {
 			configStr := string(configOutput)
 			result.Evidence += "\n" + configStr
-			
+
 			var actualStartupType string
 			if strings.Contains(configStr, "AUTO_START") {
 				actualStartupType = "automatic"
@@ -598,33 +598,33 @@ func (cm *ComplianceMonitor) checkServiceControl(control ComplianceControlConfig
 			} else if strings.Contains(configStr, "DISABLED") {
 				actualStartupType = "disabled"
 			}
-			
+
 			startupCompliant = (actualStartupType == serviceCheck.StartupType)
 		}
 	}
-	
+
 	stateCompliant := (actualState == serviceCheck.ExpectedState)
-	
+
 	if stateCompliant && startupCompliant {
 		result.Status = "compliant"
 		result.Message = fmt.Sprintf("Service '%s' is in expected state: %s", serviceCheck.Name, actualState)
 	} else {
 		result.Status = "non_compliant"
-		result.Message = fmt.Sprintf("Service '%s' is not compliant (actual state: %s, expected: %s)", 
+		result.Message = fmt.Sprintf("Service '%s' is not compliant (actual state: %s, expected: %s)",
 			serviceCheck.Name, actualState, serviceCheck.ExpectedState)
 	}
-	
+
 	return result
 }
 
 // checkFileControl performs a file-based compliance check
 func (cm *ComplianceMonitor) checkFileControl(control ComplianceControlConfig, result ComplianceControlResult) ComplianceControlResult {
 	fileCheck := control.CheckData.File
-	
+
 	// Check if file exists
 	_, err := os.Stat(fileCheck.Path)
 	fileExists := err == nil
-	
+
 	switch fileCheck.CheckType {
 	case "exists":
 		if fileExists {
@@ -646,9 +646,9 @@ func (cm *ComplianceMonitor) checkFileControl(control ComplianceControlConfig, r
 		result.Status = "error"
 		result.Message = "Unsupported file check type: " + fileCheck.CheckType
 	}
-	
+
 	result.Evidence = fmt.Sprintf("File path: %s, Exists: %t", fileCheck.Path, fileExists)
-	
+
 	return result
 }
 
@@ -656,11 +656,11 @@ func (cm *ComplianceMonitor) checkFileControl(control ComplianceControlConfig, r
 func (cm *ComplianceMonitor) checkPolicyControl(_ ComplianceControlConfig, result ComplianceControlResult) ComplianceControlResult {
 	// This is a simplified implementation
 	// In a real scenario, you would use tools like secedit or PowerShell to query policies
-	
+
 	result.Status = "not_applicable"
 	result.Message = "Policy checks not fully implemented in this demo"
 	result.Evidence = "Policy check would require additional Windows API calls or PowerShell integration"
-	
+
 	return result
 }
 
@@ -668,11 +668,11 @@ func (cm *ComplianceMonitor) checkPolicyControl(_ ComplianceControlConfig, resul
 func (cm *ComplianceMonitor) checkWMIControl(_ ComplianceControlConfig, result ComplianceControlResult) ComplianceControlResult {
 	// This is a simplified implementation
 	// In a real scenario, you would use WMI queries
-	
+
 	result.Status = "not_applicable"
 	result.Message = "WMI checks not fully implemented in this demo"
 	result.Evidence = "WMI check would require WMI integration"
-	
+
 	return result
 }
 
@@ -719,7 +719,7 @@ func (cm *ComplianceMonitor) compareValues(actual string, expected interface{}, 
 // generateRecommendations generates compliance recommendations based on findings
 func (cm *ComplianceMonitor) generateRecommendations(report ComplianceReport) []ComplianceRecommendation {
 	var recommendations []ComplianceRecommendation
-	
+
 	// High-priority recommendations for critical and high severity findings
 	if report.Summary.CriticalFindings > 0 {
 		recommendations = append(recommendations, ComplianceRecommendation{
@@ -737,7 +737,7 @@ func (cm *ComplianceMonitor) generateRecommendations(report ComplianceReport) []
 			},
 		})
 	}
-	
+
 	if report.Summary.HighFindings > 0 {
 		recommendations = append(recommendations, ComplianceRecommendation{
 			Priority:    "high",
@@ -754,7 +754,7 @@ func (cm *ComplianceMonitor) generateRecommendations(report ComplianceReport) []
 			},
 		})
 	}
-	
+
 	// Framework-specific recommendations
 	for _, framework := range report.Frameworks {
 		if framework.Score < 80 {
@@ -774,7 +774,7 @@ func (cm *ComplianceMonitor) generateRecommendations(report ComplianceReport) []
 			})
 		}
 	}
-	
+
 	return recommendations
 }
 

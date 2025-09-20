@@ -12,13 +12,13 @@ import (
 
 // UEBAAnalytics manages User and Entity Behavior Analytics
 type UEBAAnalytics struct {
-	userProfiles    map[string]*UserProfile
-	entityProfiles  map[string]*EntityProfile
-	behaviorRules   []BehaviorRule
-	anomalies       []Anomaly
-	riskScores      map[string]float64
-	learningPeriod  time.Duration
-	alertThreshold  float64
+	userProfiles   map[string]*UserProfile
+	entityProfiles map[string]*EntityProfile
+	behaviorRules  []BehaviorRule
+	anomalies      []Anomaly
+	riskScores     map[string]float64
+	learningPeriod time.Duration
+	alertThreshold float64
 }
 
 // UserProfile represents a user's behavioral profile
@@ -55,31 +55,31 @@ type EntityProfile struct {
 
 // LoginPattern represents user login behavior patterns
 type LoginPattern struct {
-	TypicalHours    []int                  `json:"typical_hours"`    // Hours of day (0-23)
-	TypicalDays     []int                  `json:"typical_days"`     // Days of week (0-6)
-	LoginFrequency  map[string]int         `json:"login_frequency"`  // Daily login counts
-	FailedAttempts  map[string]int         `json:"failed_attempts"`  // Failed login attempts
-	LoginSources    map[string]int         `json:"login_sources"`    // Source IPs/machines
-	SessionDuration map[string]float64     `json:"session_duration"` // Average session durations
+	TypicalHours    []int              `json:"typical_hours"`    // Hours of day (0-23)
+	TypicalDays     []int              `json:"typical_days"`     // Days of week (0-6)
+	LoginFrequency  map[string]int     `json:"login_frequency"`  // Daily login counts
+	FailedAttempts  map[string]int     `json:"failed_attempts"`  // Failed login attempts
+	LoginSources    map[string]int     `json:"login_sources"`    // Source IPs/machines
+	SessionDuration map[string]float64 `json:"session_duration"` // Average session durations
 }
 
 // AccessPattern represents user access behavior patterns
 type AccessPattern struct {
-	FilesAccessed     map[string]int     `json:"files_accessed"`     // File access frequency
-	FoldersAccessed   map[string]int     `json:"folders_accessed"`   // Folder access frequency
-	ApplicationsUsed  map[string]int     `json:"applications_used"`  // Application usage frequency
-	PermissionsUsed   map[string]int     `json:"permissions_used"`   // Permissions exercised
-	DataVolume        map[string]float64 `json:"data_volume"`        // Data transfer volumes
+	FilesAccessed    map[string]int     `json:"files_accessed"`    // File access frequency
+	FoldersAccessed  map[string]int     `json:"folders_accessed"`  // Folder access frequency
+	ApplicationsUsed map[string]int     `json:"applications_used"` // Application usage frequency
+	PermissionsUsed  map[string]int     `json:"permissions_used"`  // Permissions exercised
+	DataVolume       map[string]float64 `json:"data_volume"`       // Data transfer volumes
 }
 
 // NetworkPattern represents network behavior patterns
 type NetworkPattern struct {
-	Connections     map[string]int     `json:"connections"`      // Destination connections
-	Protocols       map[string]int     `json:"protocols"`        // Protocol usage
-	Ports           map[string]int     `json:"ports"`            // Port usage
-	DataTransfer    map[string]float64 `json:"data_transfer"`    // Data transfer patterns
-	DNSQueries      map[string]int     `json:"dns_queries"`      // DNS query patterns
-	GeoLocations    map[string]int     `json:"geo_locations"`    // Geographic locations
+	Connections  map[string]int     `json:"connections"`   // Destination connections
+	Protocols    map[string]int     `json:"protocols"`     // Protocol usage
+	Ports        map[string]int     `json:"ports"`         // Port usage
+	DataTransfer map[string]float64 `json:"data_transfer"` // Data transfer patterns
+	DNSQueries   map[string]int     `json:"dns_queries"`   // DNS query patterns
+	GeoLocations map[string]int     `json:"geo_locations"` // Geographic locations
 }
 
 // ProcessPattern represents process execution patterns
@@ -93,11 +93,11 @@ type ProcessPattern struct {
 
 // FilePattern represents file operation patterns
 type FilePattern struct {
-	FilesCreated   map[string]int `json:"files_created"`   // File creation patterns
-	FilesModified  map[string]int `json:"files_modified"`  // File modification patterns
-	FilesDeleted   map[string]int `json:"files_deleted"`   // File deletion patterns
-	FileTypes      map[string]int `json:"file_types"`      // File type patterns
-	FileLocations  map[string]int `json:"file_locations"`  // File location patterns
+	FilesCreated  map[string]int `json:"files_created"`  // File creation patterns
+	FilesModified map[string]int `json:"files_modified"` // File modification patterns
+	FilesDeleted  map[string]int `json:"files_deleted"`  // File deletion patterns
+	FileTypes     map[string]int `json:"file_types"`     // File type patterns
+	FileLocations map[string]int `json:"file_locations"` // File location patterns
 }
 
 // ServicePattern represents service operation patterns
@@ -153,10 +153,10 @@ func NewUEBAAnalytics() *UEBAAnalytics {
 		learningPeriod: 30 * 24 * time.Hour, // 30 days learning period
 		alertThreshold: 0.7,                 // Alert threshold for anomaly scores
 	}
-	
+
 	// Initialize default behavior rules
 	ueba.initializeDefaultRules()
-	
+
 	return ueba
 }
 
@@ -252,24 +252,24 @@ func (ueba *UEBAAnalytics) ProcessEvent(event map[string]interface{}) error {
 	timestamp, _ := event["timestamp"].(time.Time)
 	userID, _ := event["user_id"].(string)
 	entityID, _ := event["entity_id"].(string)
-	
+
 	// Update user profile if user is involved
 	if userID != "" {
 		ueba.updateUserProfile(userID, eventType, event, timestamp)
 	}
-	
+
 	// Update entity profile if entity is involved
 	if entityID != "" {
 		ueba.updateEntityProfile(entityID, eventType, event, timestamp)
 	}
-	
+
 	// Analyze for anomalies
 	anomalies := ueba.analyzeEvent(event)
 	for _, anomaly := range anomalies {
 		ueba.anomalies = append(ueba.anomalies, anomaly)
 		log.Printf("UEBA Anomaly detected: %s (Score: %.2f)", anomaly.Title, anomaly.Score)
 	}
-	
+
 	return nil
 }
 
@@ -289,9 +289,9 @@ func (ueba *UEBAAnalytics) updateUserProfile(userID, eventType string, event map
 		}
 		ueba.userProfiles[userID] = profile
 	}
-	
+
 	profile.LastSeen = timestamp
-	
+
 	// Update patterns based on event type
 	switch eventType {
 	case "login":
@@ -322,9 +322,9 @@ func (ueba *UEBAAnalytics) updateEntityProfile(entityID, eventType string, event
 		}
 		ueba.entityProfiles[entityID] = profile
 	}
-	
+
 	profile.LastSeen = timestamp
-	
+
 	// Update patterns based on event type
 	switch eventType {
 	case "network_connection":
@@ -343,25 +343,25 @@ func (ueba *UEBAAnalytics) updateLoginPatterns(profile *UserProfile, event map[s
 	hour := timestamp.Hour()
 	day := int(timestamp.Weekday())
 	dateKey := timestamp.Format("2006-01-02")
-	
+
 	// Update typical hours
 	if !contains(profile.LoginPatterns.TypicalHours, hour) {
 		profile.LoginPatterns.TypicalHours = append(profile.LoginPatterns.TypicalHours, hour)
 	}
-	
+
 	// Update typical days
 	if !contains(profile.LoginPatterns.TypicalDays, day) {
 		profile.LoginPatterns.TypicalDays = append(profile.LoginPatterns.TypicalDays, day)
 	}
-	
+
 	// Update login frequency
 	profile.LoginPatterns.LoginFrequency[dateKey]++
-	
+
 	// Update login sources
 	if sourceIP, ok := event["source_ip"].(string); ok {
 		profile.LoginPatterns.LoginSources[sourceIP]++
 	}
-	
+
 	// Update failed attempts if applicable
 	if success, ok := event["success"].(bool); ok && !success {
 		profile.LoginPatterns.FailedAttempts[dateKey]++
@@ -372,18 +372,18 @@ func (ueba *UEBAAnalytics) updateLoginPatterns(profile *UserProfile, event map[s
 func (ueba *UEBAAnalytics) updateAccessPatterns(profile *UserProfile, event map[string]interface{}) {
 	if filePath, ok := event["file_path"].(string); ok {
 		profile.AccessPatterns.FilesAccessed[filePath]++
-		
+
 		// Extract folder path
 		if lastSlash := strings.LastIndex(filePath, "\\"); lastSlash != -1 {
 			folderPath := filePath[:lastSlash]
 			profile.AccessPatterns.FoldersAccessed[folderPath]++
 		}
 	}
-	
+
 	if appName, ok := event["application"].(string); ok {
 		profile.AccessPatterns.ApplicationsUsed[appName]++
 	}
-	
+
 	if dataSize, ok := event["data_size"].(float64); ok {
 		dateKey := time.Now().Format("2006-01-02")
 		profile.AccessPatterns.DataVolume[dateKey] += dataSize
@@ -395,15 +395,15 @@ func (ueba *UEBAAnalytics) updateNetworkPatterns(patterns *NetworkPattern, event
 	if destIP, ok := event["destination_ip"].(string); ok {
 		patterns.Connections[destIP]++
 	}
-	
+
 	if protocol, ok := event["protocol"].(string); ok {
 		patterns.Protocols[protocol]++
 	}
-	
+
 	if port, ok := event["destination_port"].(string); ok {
 		patterns.Ports[port]++
 	}
-	
+
 	if dataSize, ok := event["data_size"].(float64); ok {
 		dateKey := time.Now().Format("2006-01-02")
 		patterns.DataTransfer[dateKey] += dataSize
@@ -414,7 +414,7 @@ func (ueba *UEBAAnalytics) updateNetworkPatterns(patterns *NetworkPattern, event
 func (ueba *UEBAAnalytics) updateProcessPatterns(patterns *ProcessPattern, event map[string]interface{}, timestamp time.Time) {
 	if processName, ok := event["process_name"].(string); ok {
 		patterns.ProcessNames[processName]++
-		
+
 		// Update execution times
 		hour := timestamp.Hour()
 		if _, exists := patterns.ExecutionTimes[processName]; !exists {
@@ -422,11 +422,11 @@ func (ueba *UEBAAnalytics) updateProcessPatterns(patterns *ProcessPattern, event
 		}
 		patterns.ExecutionTimes[processName] = append(patterns.ExecutionTimes[processName], hour)
 	}
-	
+
 	if cmdLine, ok := event["command_line"].(string); ok {
 		patterns.CommandLines[cmdLine]++
 	}
-	
+
 	if parentProcess, ok := event["parent_process"].(string); ok {
 		patterns.ParentProcesses[parentProcess]++
 	}
@@ -436,7 +436,7 @@ func (ueba *UEBAAnalytics) updateProcessPatterns(patterns *ProcessPattern, event
 func (ueba *UEBAAnalytics) updateFilePatterns(profile *EntityProfile, event map[string]interface{}) {
 	operation, _ := event["operation"].(string)
 	filePath, _ := event["file_path"].(string)
-	
+
 	switch operation {
 	case "create":
 		profile.FilePatterns.FilesCreated[filePath]++
@@ -445,13 +445,13 @@ func (ueba *UEBAAnalytics) updateFilePatterns(profile *EntityProfile, event map[
 	case "delete":
 		profile.FilePatterns.FilesDeleted[filePath]++
 	}
-	
+
 	// Extract file type
 	if lastDot := strings.LastIndex(filePath, "."); lastDot != -1 {
 		fileType := filePath[lastDot:]
 		profile.FilePatterns.FileTypes[fileType]++
 	}
-	
+
 	// Extract file location
 	if lastSlash := strings.LastIndex(filePath, "\\"); lastSlash != -1 {
 		location := filePath[:lastSlash]
@@ -463,7 +463,7 @@ func (ueba *UEBAAnalytics) updateFilePatterns(profile *EntityProfile, event map[
 func (ueba *UEBAAnalytics) updateServicePatterns(profile *EntityProfile, event map[string]interface{}) {
 	serviceName, _ := event["service_name"].(string)
 	operation, _ := event["operation"].(string)
-	
+
 	switch operation {
 	case "start":
 		profile.ServicePatterns.ServicesStarted[serviceName]++
@@ -477,18 +477,18 @@ func (ueba *UEBAAnalytics) updateServicePatterns(profile *EntityProfile, event m
 // analyzeEvent analyzes an event for behavioral anomalies
 func (ueba *UEBAAnalytics) analyzeEvent(event map[string]interface{}) []Anomaly {
 	var anomalies []Anomaly
-	
+
 	for _, rule := range ueba.behaviorRules {
 		if !rule.Enabled {
 			continue
 		}
-		
+
 		anomaly := ueba.evaluateRule(rule, event)
 		if anomaly != nil {
 			anomalies = append(anomalies, *anomaly)
 		}
 	}
-	
+
 	return anomalies
 }
 
@@ -514,16 +514,16 @@ func (ueba *UEBAAnalytics) evaluateAuthenticationRule(rule BehaviorRule, event m
 	userID, _ := event["user_id"].(string)
 	eventType, _ := event["event_type"].(string)
 	timestamp, _ := event["timestamp"].(time.Time)
-	
+
 	if userID == "" || eventType != "login" {
 		return nil
 	}
-	
+
 	profile, exists := ueba.userProfiles[userID]
 	if !exists {
 		return nil
 	}
-	
+
 	// Check baseline requirements for statistical rules
 	if rule.ID == "UEBA-001" || rule.ID == "UEBA-003" {
 		minDays := 7.0
@@ -538,7 +538,7 @@ func (ueba *UEBAAnalytics) evaluateAuthenticationRule(rule BehaviorRule, event m
 			return nil
 		}
 	}
-	
+
 	// Analyze based on rule ID
 	switch rule.ID {
 	case "UEBA-001": // Unusual Login Time
@@ -573,10 +573,10 @@ func (ueba *UEBAAnalytics) evaluateAuthenticationRule(rule BehaviorRule, event m
 					}
 				}
 			}
-			
+
 			windowStart := timestamp.Add(-time.Hour)
 			failedCount := 0
-			
+
 			for dateStr, count := range profile.LoginPatterns.FailedAttempts {
 				if date, err := time.Parse("2006-01-02", dateStr); err == nil {
 					if date.After(windowStart) {
@@ -584,7 +584,7 @@ func (ueba *UEBAAnalytics) evaluateAuthenticationRule(rule BehaviorRule, event m
 					}
 				}
 			}
-			
+
 			if float64(failedCount) > threshold {
 				return &Anomaly{
 					ID:          fmt.Sprintf("ANOM-%d", time.Now().Unix()),
@@ -606,7 +606,7 @@ func (ueba *UEBAAnalytics) evaluateAuthenticationRule(rule BehaviorRule, event m
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -615,16 +615,16 @@ func (ueba *UEBAAnalytics) evaluateDataAccessRule(rule BehaviorRule, event map[s
 	userID, _ := event["user_id"].(string)
 	eventType, _ := event["event_type"].(string)
 	timestamp, _ := event["timestamp"].(time.Time)
-	
+
 	if userID == "" || eventType != "file_access" {
 		return nil
 	}
-	
+
 	profile, exists := ueba.userProfiles[userID]
 	if !exists {
 		return nil
 	}
-	
+
 	switch rule.ID {
 	case "UEBA-003": // Unusual File Access Volume
 		// Calculate daily file access average
@@ -632,14 +632,14 @@ func (ueba *UEBAAnalytics) evaluateDataAccessRule(rule BehaviorRule, event map[s
 		for _, count := range profile.AccessPatterns.FilesAccessed {
 			totalAccess += count
 		}
-		
+
 		daysSinceFirst := int(time.Since(profile.FirstSeen).Hours() / 24)
 		if daysSinceFirst == 0 {
 			daysSinceFirst = 1
 		}
-		
+
 		avgDaily := float64(totalAccess) / float64(daysSinceFirst)
-		
+
 		// Get deviation threshold from conditions
 		deviationThreshold := 2.5
 		for _, condition := range rule.Conditions {
@@ -649,7 +649,7 @@ func (ueba *UEBAAnalytics) evaluateDataAccessRule(rule BehaviorRule, event map[s
 				}
 			}
 		}
-		
+
 		// Get today's access count
 		today := timestamp.Format("2006-01-02")
 		todayCount := 0
@@ -658,7 +658,7 @@ func (ueba *UEBAAnalytics) evaluateDataAccessRule(rule BehaviorRule, event map[s
 				todayCount += count
 			}
 		}
-		
+
 		if float64(todayCount) > avgDaily*deviationThreshold {
 			return &Anomaly{
 				ID:          fmt.Sprintf("ANOM-%d", time.Now().Unix()),
@@ -679,7 +679,7 @@ func (ueba *UEBAAnalytics) evaluateDataAccessRule(rule BehaviorRule, event map[s
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -688,16 +688,16 @@ func (ueba *UEBAAnalytics) evaluateNetworkRule(rule BehaviorRule, event map[stri
 	userID, _ := event["user_id"].(string)
 	eventType, _ := event["event_type"].(string)
 	timestamp, _ := event["timestamp"].(time.Time)
-	
+
 	if userID == "" || eventType != "network_connection" {
 		return nil
 	}
-	
+
 	profile, exists := ueba.userProfiles[userID]
 	if !exists {
 		return nil
 	}
-	
+
 	switch rule.ID {
 	case "UEBA-005": // Unusual Network Destinations
 		destination, _ := event["destination_ip"].(string)
@@ -724,7 +724,7 @@ func (ueba *UEBAAnalytics) evaluateNetworkRule(rule BehaviorRule, event map[stri
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -733,20 +733,20 @@ func (ueba *UEBAAnalytics) evaluateProcessRule(rule BehaviorRule, event map[stri
 	userID, _ := event["user_id"].(string)
 	eventType, _ := event["event_type"].(string)
 	timestamp, _ := event["timestamp"].(time.Time)
-	
+
 	if userID == "" || eventType != "process_execution" {
 		return nil
 	}
-	
+
 	profile, exists := ueba.userProfiles[userID]
 	if !exists {
 		return nil
 	}
-	
+
 	switch rule.ID {
 	case "UEBA-006": // Suspicious Process Execution
 		processName, _ := event["process_name"].(string)
-		
+
 		// Check if this is a new process for the user
 		if _, exists := profile.ProcessPatterns.ProcessNames[processName]; !exists {
 			// Check if it matches suspicious patterns from conditions
@@ -777,7 +777,7 @@ func (ueba *UEBAAnalytics) evaluateProcessRule(rule BehaviorRule, event map[stri
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -789,7 +789,7 @@ func (ueba *UEBAAnalytics) CalculateRiskScores() {
 		ueba.riskScores[userID] = riskScore
 		profile.RiskScore = riskScore
 	}
-	
+
 	// Calculate entity risk scores
 	for entityID, profile := range ueba.entityProfiles {
 		riskScore := ueba.calculateEntityRiskScore(profile)
@@ -801,7 +801,7 @@ func (ueba *UEBAAnalytics) CalculateRiskScores() {
 // calculateUserRiskScore calculates risk score for a user
 func (ueba *UEBAAnalytics) calculateUserRiskScore(profile *UserProfile) float64 {
 	riskScore := 0.0
-	
+
 	// Factor in anomalies
 	for _, anomaly := range profile.Anomalies {
 		switch anomaly.Severity {
@@ -815,7 +815,7 @@ func (ueba *UEBAAnalytics) calculateUserRiskScore(profile *UserProfile) float64 
 			riskScore += 0.1
 		}
 	}
-	
+
 	// Factor in failed login attempts
 	totalFailed := 0
 	for _, count := range profile.LoginPatterns.FailedAttempts {
@@ -824,24 +824,24 @@ func (ueba *UEBAAnalytics) calculateUserRiskScore(profile *UserProfile) float64 
 	if totalFailed > 10 {
 		riskScore += 0.2
 	}
-	
+
 	// Factor in unusual access patterns
 	if len(profile.AccessPatterns.FilesAccessed) > 1000 {
 		riskScore += 0.1
 	}
-	
+
 	// Normalize to 0-1 range
 	if riskScore > 1.0 {
 		riskScore = 1.0
 	}
-	
+
 	return riskScore
 }
 
 // calculateEntityRiskScore calculates risk score for an entity
 func (ueba *UEBAAnalytics) calculateEntityRiskScore(profile *EntityProfile) float64 {
 	riskScore := 0.0
-	
+
 	// Factor in anomalies
 	for _, anomaly := range profile.Anomalies {
 		switch anomaly.Severity {
@@ -855,12 +855,12 @@ func (ueba *UEBAAnalytics) calculateEntityRiskScore(profile *EntityProfile) floa
 			riskScore += 0.1
 		}
 	}
-	
+
 	// Factor in unusual network connections
 	if len(profile.NetworkPatterns.Connections) > 100 {
 		riskScore += 0.1
 	}
-	
+
 	// Factor in suspicious processes
 	suspiciousProcesses := []string{"powershell", "cmd", "wmic", "net"}
 	for processName := range profile.ProcessPatterns.ProcessNames {
@@ -871,12 +871,12 @@ func (ueba *UEBAAnalytics) calculateEntityRiskScore(profile *EntityProfile) floa
 			}
 		}
 	}
-	
+
 	// Normalize to 0-1 range
 	if riskScore > 1.0 {
 		riskScore = 1.0
 	}
-	
+
 	return riskScore
 }
 
@@ -886,16 +886,16 @@ func (ueba *UEBAAnalytics) GetTopRiskyUsers(limit int) []UserProfile {
 	for _, profile := range ueba.userProfiles {
 		users = append(users, *profile)
 	}
-	
+
 	// Sort by risk score
 	sort.Slice(users, func(i, j int) bool {
 		return users[i].RiskScore > users[j].RiskScore
 	})
-	
+
 	if limit > len(users) {
 		limit = len(users)
 	}
-	
+
 	return users[:limit]
 }
 
@@ -903,18 +903,18 @@ func (ueba *UEBAAnalytics) GetTopRiskyUsers(limit int) []UserProfile {
 func (ueba *UEBAAnalytics) GetRecentAnomalies(hours int) []Anomaly {
 	var recentAnomalies []Anomaly
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
-	
+
 	for _, anomaly := range ueba.anomalies {
 		if anomaly.Timestamp.After(cutoff) {
 			recentAnomalies = append(recentAnomalies, anomaly)
 		}
 	}
-	
+
 	// Sort by timestamp (newest first)
 	sort.Slice(recentAnomalies, func(i, j int) bool {
 		return recentAnomalies[i].Timestamp.After(recentAnomalies[j].Timestamp)
 	})
-	
+
 	return recentAnomalies
 }
 

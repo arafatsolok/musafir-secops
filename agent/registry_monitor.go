@@ -39,22 +39,22 @@ type RegistryValue struct {
 }
 
 type WatchedRegistryKey struct {
-	Hive      registry.Key
-	KeyPath   string
-	Handle    registry.Key
+	Hive        registry.Key
+	KeyPath     string
+	Handle      registry.Key
 	EventHandle windows.Handle
-	Critical  bool
+	Critical    bool
 }
 
 // Registry Monitor manages registry monitoring
 type RegistryMonitor struct {
-	watchedKeys   map[string]*WatchedRegistryKey
-	eventChannel  chan RegistryEvent
-	stopChannel   chan bool
-	running       bool
-	criticalKeys  []string
-	startupKeys   []string
-	securityKeys  []string
+	watchedKeys  map[string]*WatchedRegistryKey
+	eventChannel chan RegistryEvent
+	stopChannel  chan bool
+	running      bool
+	criticalKeys []string
+	startupKeys  []string
+	securityKeys []string
 }
 
 // NewRegistryMonitor creates a new registry monitor
@@ -72,18 +72,18 @@ func NewRegistryMonitor() *RegistryMonitor {
 			"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunServicesOnce",
 			"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run",
 			"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
-			
+
 			// Security keys
 			"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies",
 			"SOFTWARE\\Microsoft\\Windows Defender",
 			"SYSTEM\\CurrentControlSet\\Services",
 			"SYSTEM\\CurrentControlSet\\Control\\SafeBoot",
 			"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
-			
+
 			// Network and firewall
 			"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy",
 			"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-			
+
 			// System configuration
 			"SYSTEM\\CurrentControlSet\\Control\\Session Manager",
 			"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options",
@@ -110,35 +110,35 @@ func (rm *RegistryMonitor) Start() error {
 	}
 
 	rm.running = true
-	
+
 	// Start monitoring critical registry keys
 	for _, keyPath := range rm.criticalKeys {
 		if err := rm.watchRegistryKey(registry.LOCAL_MACHINE, keyPath, true); err != nil {
 			log.Printf("Failed to watch registry key HKLM\\%s: %v", keyPath, err)
 		}
 	}
-	
+
 	// Also monitor current user keys
 	userKeys := []string{
 		"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
 		"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
 	}
-	
+
 	for _, keyPath := range userKeys {
 		if err := rm.watchRegistryKey(registry.CURRENT_USER, keyPath, true); err != nil {
 			log.Printf("Failed to watch registry key HKCU\\%s: %v", keyPath, err)
 		}
 	}
-	
+
 	// Start periodic scanning goroutine
 	go rm.performPeriodicScans()
-	
+
 	// Start event processing goroutine
 	go rm.processEvents()
-	
+
 	// Start registry monitoring goroutine
 	go rm.monitorRegistryChanges()
-	
+
 	log.Println("Registry monitor started")
 	return nil
 }
@@ -150,7 +150,7 @@ func (rm *RegistryMonitor) Stop() {
 	}
 
 	rm.running = false
-	
+
 	// Close all registry handles
 	for _, watchedKey := range rm.watchedKeys {
 		if watchedKey.Handle != 0 {
@@ -160,7 +160,7 @@ func (rm *RegistryMonitor) Stop() {
 			windows.CloseHandle(watchedKey.EventHandle)
 		}
 	}
-	
+
 	close(rm.stopChannel)
 	log.Println("Registry monitor stopped")
 }
@@ -196,10 +196,10 @@ func (rm *RegistryMonitor) watchRegistryKey(hive registry.Key, keyPath string, c
 
 	fullPath := rm.getFullRegistryPath(hive, keyPath)
 	rm.watchedKeys[fullPath] = watchedKey
-	
+
 	// Start watching
 	go rm.watchKeyChanges(watchedKey)
-	
+
 	return nil
 }
 
@@ -217,7 +217,7 @@ func (rm *RegistryMonitor) watchKeyChanges(watchedKey *WatchedRegistryKey) {
 			watchedKey.EventHandle,
 			true, // asynchronous
 		)
-		
+
 		if err != nil {
 			log.Printf("RegNotifyChangeKeyValue failed for %s: %v", watchedKey.KeyPath, err)
 			time.Sleep(10 * time.Second)
@@ -244,7 +244,7 @@ func (rm *RegistryMonitor) watchKeyChanges(watchedKey *WatchedRegistryKey) {
 // processRegistryChange processes a registry change notification
 func (rm *RegistryMonitor) processRegistryChange(watchedKey *WatchedRegistryKey) {
 	fullPath := rm.getFullRegistryPath(watchedKey.Hive, watchedKey.KeyPath)
-	
+
 	// Get current values
 	currentValues, err := rm.getRegistryKeyValues(watchedKey.Handle)
 	if err != nil {
@@ -348,7 +348,7 @@ func (rm *RegistryMonitor) scanRegistryKey(hive registry.Key, keyPath, scanType 
 					DataSize: value.DataSize,
 				},
 			}
-			
+
 			rm.eventChannel <- event
 		}
 	}
@@ -387,12 +387,12 @@ func (rm *RegistryMonitor) handleRegistryEvent(event RegistryEvent) {
 			"name":     event.EventType,
 			"severity": getRegistryEventSeverity(event.EventType, event.RegistryInfo.KeyPath),
 			"attrs": map[string]interface{}{
-				"process_id":     event.ProcessInfo.PID,
-				"process_name":   event.ProcessInfo.Name,
-				"registry_hive":  event.RegistryInfo.Hive,
-				"registry_key":   event.RegistryInfo.KeyPath,
-				"registry_path":  event.RegistryInfo.FullPath,
-				"action":         event.RegistryInfo.Action,
+				"process_id":    event.ProcessInfo.PID,
+				"process_name":  event.ProcessInfo.Name,
+				"registry_hive": event.RegistryInfo.Hive,
+				"registry_key":  event.RegistryInfo.KeyPath,
+				"registry_path": event.RegistryInfo.FullPath,
+				"action":        event.RegistryInfo.Action,
 			},
 		},
 		Ingest: map[string]string{
@@ -427,7 +427,7 @@ func (rm *RegistryMonitor) handleRegistryEvent(event RegistryEvent) {
 	if gatewayURL == "" {
 		gatewayURL = "http://localhost:8080"
 	}
-	
+
 	go sendEventToGateway(gatewayURL, data)
 }
 
@@ -467,7 +467,7 @@ func (rm *RegistryMonitor) getHiveName(hive registry.Key) string {
 
 func (rm *RegistryMonitor) getRegistryKeyValues(key registry.Key) (map[string]RegistryValue, error) {
 	values := make(map[string]RegistryValue)
-	
+
 	valueNames, err := key.ReadValueNames(-1)
 	if err != nil {
 		return values, err
@@ -565,7 +565,7 @@ func (rm *RegistryMonitor) isSuspiciousRegistryValue(name string, data interface
 		// Check for suspicious startup entries
 		if dataStr, ok := data.(string); ok {
 			dataLower := strings.ToLower(dataStr)
-			
+
 			// Suspicious patterns in startup entries
 			suspiciousPatterns := []string{
 				"powershell",
@@ -582,13 +582,13 @@ func (rm *RegistryMonitor) isSuspiciousRegistryValue(name string, data interface
 				"%temp%",
 				"%appdata%",
 			}
-			
+
 			for _, pattern := range suspiciousPatterns {
 				if strings.Contains(dataLower, pattern) {
 					return true
 				}
 			}
-			
+
 			// Check for suspicious file extensions
 			suspiciousExts := []string{".bat", ".cmd", ".ps1", ".vbs", ".js", ".jar"}
 			for _, ext := range suspiciousExts {
@@ -598,11 +598,11 @@ func (rm *RegistryMonitor) isSuspiciousRegistryValue(name string, data interface
 			}
 		}
 	}
-	
+
 	if scanType == "security_scan" {
 		// Check for security-related changes
 		nameLower := strings.ToLower(name)
-		
+
 		// Security-related value names
 		securityValues := []string{
 			"disableantispyware",
@@ -613,20 +613,20 @@ func (rm *RegistryMonitor) isSuspiciousRegistryValue(name string, data interface
 			"enablelua",
 			"consentpromptbehavioradmin",
 		}
-		
+
 		for _, secValue := range securityValues {
 			if strings.Contains(nameLower, secValue) {
 				return true
 			}
 		}
 	}
-	
+
 	return false
 }
 
 func getRegistryEventSeverity(eventType, keyPath string) int {
 	keyPathLower := strings.ToLower(keyPath)
-	
+
 	// High severity for security-related keys
 	if strings.Contains(keyPathLower, "windows defender") ||
 		strings.Contains(keyPathLower, "firewall") ||
@@ -639,7 +639,7 @@ func getRegistryEventSeverity(eventType, keyPath string) int {
 			return 5 // Critical
 		}
 	}
-	
+
 	// Medium severity for startup keys
 	if strings.Contains(keyPathLower, "run") ||
 		strings.Contains(keyPathLower, "services") {
@@ -650,7 +650,7 @@ func getRegistryEventSeverity(eventType, keyPath string) int {
 			return 4 // High
 		}
 	}
-	
+
 	switch eventType {
 	case "registry_modified":
 		return 2 // Informational

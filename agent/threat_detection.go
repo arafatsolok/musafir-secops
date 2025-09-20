@@ -5,11 +5,9 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -34,16 +32,18 @@ type ThreatAlert struct {
 
 // ThreatDetector manages threat detection and analysis
 type ThreatDetector struct {
-	iocDatabase       map[string]IOCIndicator
-	behaviorRules     []BehaviorRule
-	alertChannel      chan ThreatAlert
-	eventBuffer       []map[string]interface{}
-	stopChannel       chan bool
-	threatIntelFeeds  []ThreatIntelFeed
-	enrichmentCache   map[string]ThreatEnrichment
-	mutex             sync.RWMutex
-	alertHandlers     []AlertHandler
-	detectionStats    DetectionStats
+	iocDatabase      map[string]IOCIndicator
+	behaviorRules    []BehaviorRule
+	alertChannel     chan ThreatAlert
+	eventBuffer      []map[string]interface{}
+	stopChannel      chan bool
+	threatIntelFeeds []ThreatIntelFeed
+	enrichmentCache  map[string]ThreatEnrichment
+	mutex            sync.RWMutex
+	alertHandlers    []AlertHandler
+	detectionStats   DetectionStats
+	alertHistory     []ThreatAlert
+	alertStats       map[string]interface{}
 }
 
 // IOCIndicator represents an Indicator of Compromise
@@ -77,16 +77,16 @@ type ThreatIntelFeed struct {
 
 // ThreatEnrichment represents enriched threat intelligence data
 type ThreatEnrichment struct {
-	ID               string            `json:"id"`
-	IndicatorValue   string            `json:"indicator_value"`
-	IndicatorType    string            `json:"indicator_type"`
-	EnrichmentSource string            `json:"enrichment_source"`
+	ID               string                 `json:"id"`
+	IndicatorValue   string                 `json:"indicator_value"`
+	IndicatorType    string                 `json:"indicator_type"`
+	EnrichmentSource string                 `json:"enrichment_source"`
 	EnrichmentData   map[string]interface{} `json:"enrichment_data"`
-	ReputationScore  float32           `json:"reputation_score"`
-	MalwareFamilies  []string          `json:"malware_families"`
-	AttackTechniques []string          `json:"attack_techniques"`
-	Geolocation      map[string]string `json:"geolocation"`
-	WhoisData        map[string]string `json:"whois_data"`
+	ReputationScore  float32                `json:"reputation_score"`
+	MalwareFamilies  []string               `json:"malware_families"`
+	AttackTechniques []string               `json:"attack_techniques"`
+	Geolocation      map[string]string      `json:"geolocation"`
+	WhoisData        map[string]string      `json:"whois_data"`
 }
 
 // AlertHandler defines interface for alert handling
@@ -97,33 +97,33 @@ type AlertHandler interface {
 
 // DetectionStats tracks detection statistics
 type DetectionStats struct {
-	TotalDetections     int64     `json:"total_detections"`
-	IOCMatches          int64     `json:"ioc_matches"`
-	BehavioralDetections int64    `json:"behavioral_detections"`
-	FalsePositives      int64     `json:"false_positives"`
-	LastDetection       time.Time `json:"last_detection"`
-	DetectionsByType    map[string]int64 `json:"detections_by_type"`
+	TotalDetections      int64            `json:"total_detections"`
+	IOCMatches           int64            `json:"ioc_matches"`
+	BehavioralDetections int64            `json:"behavioral_detections"`
+	FalsePositives       int64            `json:"false_positives"`
+	LastDetection        time.Time        `json:"last_detection"`
+	DetectionsByType     map[string]int64 `json:"detections_by_type"`
 	DetectionsBySeverity map[string]int64 `json:"detections_by_severity"`
 }
 
 // ThreatEvent represents a detected threat
 type ThreatEvent struct {
-	ID            string                 `json:"id"`
-	EventType     string                 `json:"event_type"`
-	Timestamp     string                 `json:"timestamp"`
-	ThreatLevel   string                 `json:"threat_level"`
-	Title         string                 `json:"title"`
-	Description   string                 `json:"description"`
-	IOCMatched    *IOCIndicator          `json:"ioc_matched,omitempty"`
-	BehaviorRule  *BehaviorRule          `json:"behavior_rule,omitempty"`
-	ProcessInfo   *ProcessInfo           `json:"process_info,omitempty"`
-	NetworkInfo   *ConnectionInfo        `json:"network_info,omitempty"`
-	FileInfo      *FileInfo              `json:"file_info,omitempty"`
-	Evidence      map[string]interface{} `json:"evidence"`
-	Confidence    float64                `json:"confidence"`
-	Status        string                 `json:"status"`
-	AssignedTo    string                 `json:"assigned_to"`
-	Enrichment    *ThreatEnrichment      `json:"enrichment,omitempty"`
+	ID           string                 `json:"id"`
+	EventType    string                 `json:"event_type"`
+	Timestamp    string                 `json:"timestamp"`
+	ThreatLevel  string                 `json:"threat_level"`
+	Title        string                 `json:"title"`
+	Description  string                 `json:"description"`
+	IOCMatched   *IOCIndicator          `json:"ioc_matched,omitempty"`
+	BehaviorRule *BehaviorRule          `json:"behavior_rule,omitempty"`
+	ProcessInfo  *ProcessInfo           `json:"process_info,omitempty"`
+	NetworkInfo  *ConnectionInfo        `json:"network_info,omitempty"`
+	FileInfo     *FileInfo              `json:"file_info,omitempty"`
+	Evidence     map[string]interface{} `json:"evidence"`
+	Confidence   float64                `json:"confidence"`
+	Status       string                 `json:"status"`
+	AssignedTo   string                 `json:"assigned_to"`
+	Enrichment   *ThreatEnrichment      `json:"enrichment,omitempty"`
 }
 
 // NewThreatDetector creates a new threat detector instance
@@ -142,15 +142,15 @@ func NewThreatDetector() *ThreatDetector {
 			DetectionsBySeverity: make(map[string]int64),
 		},
 	}
-	
+
 	td.loadDefaultIOCs()
 	td.loadDefaultBehaviorRules()
 	td.initializeThreatIntelFeeds()
-	
+
 	// Start background processes
 	go td.processAlerts()
 	go td.updateThreatIntelligence()
-	
+
 	return td
 }
 
@@ -267,14 +267,14 @@ func (td *ThreatDetector) loadDefaultIOCs() {
 			IsActive:    true,
 		},
 	}
-	
+
 	td.mutex.Lock()
 	defer td.mutex.Unlock()
-	
+
 	for _, ioc := range defaultIOCs {
 		td.iocDatabase[ioc.Value] = ioc
 	}
-	
+
 	log.Printf("Loaded %d default IOC indicators", len(defaultIOCs))
 }
 
@@ -354,7 +354,7 @@ func (td *ThreatDetector) AnalyzeProcess(process *ProcessInfo) *ThreatEvent {
 			}
 		}
 	}
-	
+
 	// Check process hash against IOC database
 	if len(process.Modules) > 0 && process.Modules[0].Hash != "" {
 		if ioc, exists := td.iocDatabase[process.Modules[0].Hash]; exists {
@@ -372,7 +372,7 @@ func (td *ThreatDetector) AnalyzeProcess(process *ProcessInfo) *ThreatEvent {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -394,7 +394,7 @@ func (td *ThreatDetector) AnalyzeNetwork(conn *ConnectionInfo) *ThreatEvent {
 			Confidence: 0.90,
 		}
 	}
-	
+
 	// Check against behavioral rules
 	connectionString := fmt.Sprintf("%s:%d", conn.RemoteAddress, conn.RemotePort)
 	for _, rule := range td.behaviorRules {
@@ -419,7 +419,7 @@ func (td *ThreatDetector) AnalyzeNetwork(conn *ConnectionInfo) *ThreatEvent {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -432,7 +432,7 @@ func (td *ThreatDetector) AnalyzeFile(file *FileInfo) *ThreatEvent {
 			file.Hash = hash
 		}
 	}
-	
+
 	// Check file hash against IOC database
 	if file.Hash != "" {
 		if ioc, exists := td.iocDatabase[file.Hash]; exists {
@@ -451,7 +451,7 @@ func (td *ThreatDetector) AnalyzeFile(file *FileInfo) *ThreatEvent {
 			}
 		}
 	}
-	
+
 	// Check file name/path against behavioral rules
 	for _, rule := range td.behaviorRules {
 		if rule.Category == "impact" && rule.Enabled {
@@ -476,7 +476,7 @@ func (td *ThreatDetector) AnalyzeFile(file *FileInfo) *ThreatEvent {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -487,12 +487,12 @@ func (td *ThreatDetector) calculateFileHash(filePath string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
-	
+
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err
 	}
-	
+
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
@@ -535,13 +535,13 @@ func (td *ThreatDetector) GetBehaviorRules() []BehaviorRule {
 // Enhanced behavioral analysis with machine learning capabilities
 func (td *ThreatDetector) AnalyzeBehavior(events []map[string]interface{}) []*ThreatEvent {
 	var threats []*ThreatEvent
-	
+
 	// Analyze event patterns for suspicious behavior
 	for _, rule := range td.behaviorRules {
 		if !rule.Enabled {
 			continue
 		}
-		
+
 		// Check for pattern matches across multiple events
 		if matches := td.evaluateBehaviorRule(rule, events); len(matches) > 0 {
 			for _, match := range matches {
@@ -557,23 +557,23 @@ func (td *ThreatDetector) AnalyzeBehavior(events []map[string]interface{}) []*Th
 			}
 		}
 	}
-	
+
 	// Advanced behavioral analysis patterns
 	threats = append(threats, td.detectAdvancedThreats(events)...)
-	
+
 	return threats
 }
 
 // evaluateBehaviorRule evaluates a behavior rule against event data
 func (td *ThreatDetector) evaluateBehaviorRule(rule BehaviorRule, events []map[string]interface{}) []map[string]interface{} {
 	var matches []map[string]interface{}
-	
+
 	for _, event := range events {
 		if td.matchesConditions(rule.Conditions, event) {
 			matches = append(matches, event)
 		}
 	}
-	
+
 	return matches
 }
 
@@ -599,10 +599,10 @@ func (td *ThreatDetector) evaluateCondition(condition BehaviorCondition, event m
 	if !exists {
 		return false
 	}
-	
+
 	fieldStr := fmt.Sprintf("%v", fieldValue)
 	conditionStr := fmt.Sprintf("%v", condition.Value)
-	
+
 	switch condition.Operator {
 	case "eq":
 		return fieldStr == conditionStr
@@ -630,34 +630,34 @@ func (td *ThreatDetector) evaluateCondition(condition BehaviorCondition, event m
 			}
 		}
 	}
-	
+
 	return false
 }
 
 // detectAdvancedThreats detects advanced threat patterns
 func (td *ThreatDetector) detectAdvancedThreats(events []map[string]interface{}) []*ThreatEvent {
 	var threats []*ThreatEvent
-	
+
 	// Detect lateral movement patterns
 	if threat := td.detectLateralMovement(events); threat != nil {
 		threats = append(threats, threat)
 	}
-	
+
 	// Detect privilege escalation attempts
 	if threat := td.detectPrivilegeEscalation(events); threat != nil {
 		threats = append(threats, threat)
 	}
-	
+
 	// Detect data exfiltration patterns
 	if threat := td.detectDataExfiltration(events); threat != nil {
 		threats = append(threats, threat)
 	}
-	
+
 	// Detect persistence mechanisms
 	if threat := td.detectPersistence(events); threat != nil {
 		threats = append(threats, threat)
 	}
-	
+
 	return threats
 }
 
@@ -666,10 +666,10 @@ func (td *ThreatDetector) detectLateralMovement(events []map[string]interface{})
 	// Look for patterns indicating lateral movement
 	networkConnections := 0
 	remoteExecutions := 0
-	
+
 	for _, event := range events {
 		eventType, _ := event["type"].(string)
-		
+
 		switch eventType {
 		case "network_event":
 			if connInfo, ok := event["connection_info"].(map[string]interface{}); ok {
@@ -681,15 +681,15 @@ func (td *ThreatDetector) detectLateralMovement(events []map[string]interface{})
 			if processInfo, ok := event["process_info"].(map[string]interface{}); ok {
 				if cmdLine, _ := processInfo["command_line"].(string); cmdLine != "" {
 					if strings.Contains(strings.ToLower(cmdLine), "psexec") ||
-					   strings.Contains(strings.ToLower(cmdLine), "wmic") ||
-					   strings.Contains(strings.ToLower(cmdLine), "powershell") {
+						strings.Contains(strings.ToLower(cmdLine), "wmic") ||
+						strings.Contains(strings.ToLower(cmdLine), "powershell") {
 						remoteExecutions++
 					}
 				}
 			}
 		}
 	}
-	
+
 	// Threshold-based detection
 	if networkConnections > 5 && remoteExecutions > 2 {
 		return &ThreatEvent{
@@ -704,7 +704,7 @@ func (td *ThreatDetector) detectLateralMovement(events []map[string]interface{})
 			Confidence: 0.80,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -712,24 +712,24 @@ func (td *ThreatDetector) detectLateralMovement(events []map[string]interface{})
 func (td *ThreatDetector) detectPrivilegeEscalation(events []map[string]interface{}) *ThreatEvent {
 	adminProcesses := 0
 	suspiciousCommands := 0
-	
+
 	for _, event := range events {
 		if processInfo, ok := event["process_info"].(map[string]interface{}); ok {
 			if user, _ := processInfo["user"].(string); strings.Contains(strings.ToLower(user), "admin") {
 				adminProcesses++
 			}
-			
+
 			if cmdLine, _ := processInfo["command_line"].(string); cmdLine != "" {
 				cmdLower := strings.ToLower(cmdLine)
 				if strings.Contains(cmdLower, "runas") ||
-				   strings.Contains(cmdLower, "elevate") ||
-				   strings.Contains(cmdLower, "bypass") {
+					strings.Contains(cmdLower, "elevate") ||
+					strings.Contains(cmdLower, "bypass") {
 					suspiciousCommands++
 				}
 			}
 		}
 	}
-	
+
 	if adminProcesses > 3 && suspiciousCommands > 1 {
 		return &ThreatEvent{
 			EventType:   "behavioral_detection",
@@ -743,7 +743,7 @@ func (td *ThreatDetector) detectPrivilegeEscalation(events []map[string]interfac
 			Confidence: 0.85,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -751,10 +751,10 @@ func (td *ThreatDetector) detectPrivilegeEscalation(events []map[string]interfac
 func (td *ThreatDetector) detectDataExfiltration(events []map[string]interface{}) *ThreatEvent {
 	largeTransfers := 0
 	fileAccesses := 0
-	
+
 	for _, event := range events {
 		eventType, _ := event["type"].(string)
-		
+
 		switch eventType {
 		case "network_event":
 			if connInfo, ok := event["connection_info"].(map[string]interface{}); ok {
@@ -766,14 +766,14 @@ func (td *ThreatDetector) detectDataExfiltration(events []map[string]interface{}
 			if fileInfo, ok := event["file_info"].(map[string]interface{}); ok {
 				if path, _ := fileInfo["path"].(string); path != "" {
 					if strings.Contains(strings.ToLower(path), "documents") ||
-					   strings.Contains(strings.ToLower(path), "desktop") {
+						strings.Contains(strings.ToLower(path), "desktop") {
 						fileAccesses++
 					}
 				}
 			}
 		}
 	}
-	
+
 	if largeTransfers > 2 && fileAccesses > 5 {
 		return &ThreatEvent{
 			EventType:   "behavioral_detection",
@@ -787,7 +787,7 @@ func (td *ThreatDetector) detectDataExfiltration(events []map[string]interface{}
 			Confidence: 0.75,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -796,10 +796,10 @@ func (td *ThreatDetector) detectPersistence(events []map[string]interface{}) *Th
 	registryModifications := 0
 	serviceCreations := 0
 	scheduledTasks := 0
-	
+
 	for _, event := range events {
 		eventType, _ := event["type"].(string)
-		
+
 		switch eventType {
 		case "registry_event":
 			registryModifications++
@@ -808,43 +808,43 @@ func (td *ThreatDetector) detectPersistence(events []map[string]interface{}) *Th
 				if cmdLine, _ := processInfo["command_line"].(string); cmdLine != "" {
 					cmdLower := strings.ToLower(cmdLine)
 					if strings.Contains(cmdLower, "sc create") ||
-					   strings.Contains(cmdLower, "net start") {
+						strings.Contains(cmdLower, "net start") {
 						serviceCreations++
 					}
 					if strings.Contains(cmdLower, "schtasks") ||
-					   strings.Contains(cmdLower, "at ") {
+						strings.Contains(cmdLower, "at ") {
 						scheduledTasks++
 					}
 				}
 			}
 		}
 	}
-	
+
 	persistenceScore := registryModifications + serviceCreations*2 + scheduledTasks*2
-	
+
 	if persistenceScore > 3 {
 		return &ThreatEvent{
 			EventType:   "behavioral_detection",
 			Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			ThreatLevel: "medium",
 			Evidence: map[string]interface{}{
-				"pattern":                 "persistence_mechanism",
-				"registry_modifications":  registryModifications,
-				"service_creations":       serviceCreations,
-				"scheduled_tasks":         scheduledTasks,
-				"persistence_score":       persistenceScore,
+				"pattern":                "persistence_mechanism",
+				"registry_modifications": registryModifications,
+				"service_creations":      serviceCreations,
+				"scheduled_tasks":        scheduledTasks,
+				"persistence_score":      persistenceScore,
 			},
 			Confidence: 0.70,
 		}
 	}
-	
+
 	return nil
 }
 
 // calculateConfidence calculates confidence score for a behavior rule match
 func (td *ThreatDetector) calculateConfidence(rule BehaviorRule, evidence map[string]interface{}) float64 {
 	baseConfidence := 0.60
-	
+
 	// Increase confidence based on rule severity
 	switch strings.ToLower(rule.Severity) {
 	case "critical":
@@ -854,17 +854,17 @@ func (td *ThreatDetector) calculateConfidence(rule BehaviorRule, evidence map[st
 	case "medium":
 		baseConfidence += 0.10
 	}
-	
+
 	// Increase confidence based on evidence quality
 	if len(evidence) > 3 {
 		baseConfidence += 0.10
 	}
-	
+
 	// Cap at 0.95
 	if baseConfidence > 0.95 {
 		baseConfidence = 0.95
 	}
-	
+
 	return baseConfidence
 }
 
@@ -872,28 +872,28 @@ func (td *ThreatDetector) calculateConfidence(rule BehaviorRule, evidence map[st
 func (td *ThreatDetector) updateThreatIntelligence() {
 	td.mutex.Lock()
 	defer td.mutex.Unlock()
-	
+
 	log.Println("Updating threat intelligence feeds...")
-	
+
 	// Update each configured threat intel feed
 	for _, feed := range td.threatIntelFeeds {
-		if feed.Enabled {
+		if feed.IsEnabled {
 			go td.updateThreatFeed(feed)
 		}
 	}
-	
+
 	// Update enrichment cache
 	td.updateEnrichmentCache()
-	
+
 	log.Printf("Threat intelligence update completed. Total IOCs: %d", len(td.iocDatabase))
 }
 
 // updateThreatFeed updates a specific threat intelligence feed
 func (td *ThreatDetector) updateThreatFeed(feed ThreatIntelFeed) {
 	log.Printf("Updating threat feed: %s", feed.Name)
-	
+
 	// Simulate fetching from external threat intel sources
-	switch feed.Type {
+	switch feed.FeedType {
 	case "malware_hashes":
 		td.fetchMalwareHashes(feed)
 	case "malicious_ips":
@@ -905,11 +905,11 @@ func (td *ThreatDetector) updateThreatFeed(feed ThreatIntelFeed) {
 	case "ransomware_signatures":
 		td.fetchRansomwareSignatures(feed)
 	}
-	
+
 	// Update feed metadata
 	feed.LastUpdated = time.Now()
-	feed.UpdateCount++
-	
+	feed.TotalIndicators++
+
 	log.Printf("Threat feed %s updated successfully", feed.Name)
 }
 
@@ -921,7 +921,7 @@ func (td *ThreatDetector) fetchMalwareHashes(feed ThreatIntelFeed) {
 		"d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2", // Trojan hash
 		"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", // Ransomware hash
 	}
-	
+
 	for _, hash := range malwareHashes {
 		ioc := IOCIndicator{
 			ID:          fmt.Sprintf("hash-%s", hash[:8]),
@@ -947,7 +947,7 @@ func (td *ThreatDetector) fetchMaliciousIPs(feed ThreatIntelFeed) {
 		"203.0.113.100",   // Known bad IP
 		"198.51.100.100",  // Phishing server
 	}
-	
+
 	for _, ip := range maliciousIPs {
 		ioc := IOCIndicator{
 			ID:          fmt.Sprintf("ip-%s", strings.ReplaceAll(ip, ".", "-")),
@@ -973,7 +973,7 @@ func (td *ThreatDetector) fetchMaliciousDomains(feed ThreatIntelFeed) {
 		"ransomware-payment.onion",
 		"botnet-control.info",
 	}
-	
+
 	for _, domain := range maliciousDomains {
 		ioc := IOCIndicator{
 			ID:          fmt.Sprintf("domain-%s", strings.ReplaceAll(domain, ".", "-")),
@@ -999,7 +999,7 @@ func (td *ThreatDetector) fetchAPTIndicators(feed ThreatIntelFeed) {
 		"fancy-bear-loader.exe":    "Fancy Bear loader",
 		"carbanak-pos-malware.exe": "Carbanak POS malware",
 	}
-	
+
 	for filename, description := range aptIndicators {
 		// Create file name IOC
 		ioc := IOCIndicator{
@@ -1028,7 +1028,7 @@ func (td *ThreatDetector) fetchRansomwareSignatures(feed ThreatIntelFeed) {
 		"ransom.txt":  "Ransomware note file",
 		"decrypt.exe": "Ransomware decryption tool",
 	}
-	
+
 	for indicator, description := range ransomwareIndicators {
 		ioc := IOCIndicator{
 			ID:          fmt.Sprintf("ransomware-%s", strings.ReplaceAll(indicator, ".", "-")),
@@ -1049,27 +1049,30 @@ func (td *ThreatDetector) fetchRansomwareSignatures(feed ThreatIntelFeed) {
 func (td *ThreatDetector) updateEnrichmentCache() {
 	// Clear old enrichment data
 	td.enrichmentCache = make(map[string]ThreatEnrichment)
-	
+
 	// Build enrichment data from IOCs
 	for _, ioc := range td.iocDatabase {
 		enrichment := ThreatEnrichment{
-			IOCValue:     ioc.Value,
-			IOCType:      ioc.Type,
-			ThreatFamily: td.extractThreatFamily(ioc),
-			Severity:     ioc.Severity,
-			Confidence:   td.calculateIOCConfidence(ioc),
-			Attribution:  td.extractAttribution(ioc),
-			TTPs:         td.extractTTPs(ioc),
-			Metadata: map[string]interface{}{
-				"source":     ioc.Source,
-				"first_seen": ioc.FirstSeen,
-				"last_seen":  ioc.LastSeen,
-				"tags":       ioc.Tags,
+			ID:               ioc.ID,
+			IndicatorValue:   ioc.Value,
+			IndicatorType:    ioc.Type,
+			EnrichmentSource: ioc.Source,
+			ReputationScore:  float32(td.calculateIOCConfidence(ioc)),
+			MalwareFamilies:  []string{td.extractThreatFamily(ioc)},
+			AttackTechniques: td.extractTTPs(ioc),
+			EnrichmentData: map[string]interface{}{
+				"source":      ioc.Source,
+				"first_seen":  ioc.FirstSeen,
+				"last_seen":   ioc.LastSeen,
+				"tags":        ioc.Tags,
+				"severity":    ioc.Severity,
+				"confidence":  td.calculateIOCConfidence(ioc),
+				"attribution": td.extractAttribution(ioc),
 			},
 		}
 		td.enrichmentCache[ioc.Value] = enrichment
 	}
-	
+
 	log.Printf("Enrichment cache updated with %d entries", len(td.enrichmentCache))
 }
 
@@ -1089,7 +1092,7 @@ func (td *ThreatDetector) extractThreatFamily(ioc IOCIndicator) string {
 			return "Phishing"
 		}
 	}
-	
+
 	// Extract from description
 	desc := strings.ToLower(ioc.Description)
 	if strings.Contains(desc, "ransomware") {
@@ -1101,26 +1104,26 @@ func (td *ThreatDetector) extractThreatFamily(ioc IOCIndicator) string {
 	} else if strings.Contains(desc, "botnet") {
 		return "Botnet"
 	}
-	
+
 	return "Unknown"
 }
 
 // calculateIOCConfidence calculates confidence score for IOC
 func (td *ThreatDetector) calculateIOCConfidence(ioc IOCIndicator) float64 {
 	baseConfidence := 0.70
-	
+
 	// Increase confidence based on source reliability
 	if strings.Contains(strings.ToLower(ioc.Source), "government") ||
-	   strings.Contains(strings.ToLower(ioc.Source), "cert") {
+		strings.Contains(strings.ToLower(ioc.Source), "cert") {
 		baseConfidence += 0.20
 	}
-	
+
 	// Increase confidence based on recency
 	daysSinceLastSeen := time.Since(ioc.LastSeen).Hours() / 24
 	if daysSinceLastSeen < 7 {
 		baseConfidence += 0.10
 	}
-	
+
 	// Increase confidence based on severity
 	switch strings.ToLower(ioc.Severity) {
 	case "critical":
@@ -1130,53 +1133,53 @@ func (td *ThreatDetector) calculateIOCConfidence(ioc IOCIndicator) float64 {
 	case "medium":
 		baseConfidence += 0.05
 	}
-	
+
 	// Cap at 0.95
 	if baseConfidence > 0.95 {
 		baseConfidence = 0.95
 	}
-	
+
 	return baseConfidence
 }
 
 // extractAttribution extracts threat attribution from IOC
 func (td *ThreatDetector) extractAttribution(ioc IOCIndicator) string {
 	desc := strings.ToLower(ioc.Description)
-	
+
 	// Known APT groups
 	aptGroups := map[string]string{
-		"apt29":        "APT29 (Cozy Bear)",
-		"cozy bear":    "APT29 (Cozy Bear)",
-		"apt28":        "APT28 (Fancy Bear)",
-		"fancy bear":   "APT28 (Fancy Bear)",
-		"lazarus":      "Lazarus Group",
-		"carbanak":     "Carbanak Group",
-		"apt1":         "APT1 (Comment Crew)",
-		"apt40":        "APT40 (Leviathan)",
+		"apt29":      "APT29 (Cozy Bear)",
+		"cozy bear":  "APT29 (Cozy Bear)",
+		"apt28":      "APT28 (Fancy Bear)",
+		"fancy bear": "APT28 (Fancy Bear)",
+		"lazarus":    "Lazarus Group",
+		"carbanak":   "Carbanak Group",
+		"apt1":       "APT1 (Comment Crew)",
+		"apt40":      "APT40 (Leviathan)",
 	}
-	
+
 	for keyword, group := range aptGroups {
 		if strings.Contains(desc, keyword) {
 			return group
 		}
 	}
-	
+
 	// Check tags
 	for _, tag := range ioc.Tags {
 		if group, exists := aptGroups[strings.ToLower(tag)]; exists {
 			return group
 		}
 	}
-	
+
 	return "Unknown"
 }
 
 // extractTTPs extracts Tactics, Techniques, and Procedures from IOC
 func (td *ThreatDetector) extractTTPs(ioc IOCIndicator) []string {
 	var ttps []string
-	
+
 	desc := strings.ToLower(ioc.Description)
-	
+
 	// Map common indicators to MITRE ATT&CK TTPs
 	ttpMap := map[string]string{
 		"lateral movement": "T1021 - Remote Services",
@@ -1185,16 +1188,16 @@ func (td *ThreatDetector) extractTTPs(ioc IOCIndicator) []string {
 		"persistence":      "T1053 - Scheduled Task/Job",
 		"encryption":       "T1486 - Data Encrypted for Impact",
 		"exfiltration":     "T1041 - Exfiltration Over C2 Channel",
-		"c2":              "T1071 - Application Layer Protocol",
-		"command":         "T1059 - Command and Scripting Interpreter",
+		"c2":               "T1071 - Application Layer Protocol",
+		"command":          "T1059 - Command and Scripting Interpreter",
 	}
-	
+
 	for keyword, ttp := range ttpMap {
 		if strings.Contains(desc, keyword) {
 			ttps = append(ttps, ttp)
 		}
 	}
-	
+
 	// Add TTPs based on IOC type
 	switch ioc.Type {
 	case "ip_address":
@@ -1206,7 +1209,7 @@ func (td *ThreatDetector) extractTTPs(ioc IOCIndicator) []string {
 	case "filename":
 		ttps = append(ttps, "T1036 - Masquerading")
 	}
-	
+
 	return ttps
 }
 
@@ -1218,15 +1221,15 @@ func (td *ThreatDetector) EnrichThreatEvent(event *ThreatEvent) {
 			if event.Evidence == nil {
 				event.Evidence = make(map[string]interface{})
 			}
-			
-			event.Evidence["threat_family"] = enrichment.ThreatFamily
-			event.Evidence["attribution"] = enrichment.Attribution
-			event.Evidence["ttps"] = enrichment.TTPs
-			event.Evidence["enrichment_confidence"] = enrichment.Confidence
-			event.Evidence["enrichment_metadata"] = enrichment.Metadata
-			
-			log.Printf("Enriched threat event with intelligence: %s -> %s", 
-				event.IOCMatched.Value, enrichment.ThreatFamily)
+
+			event.Evidence["threat_family"] = enrichment.MalwareFamilies
+			event.Evidence["attribution"] = enrichment.EnrichmentData["attribution"]
+			event.Evidence["ttps"] = enrichment.AttackTechniques
+			event.Evidence["enrichment_confidence"] = enrichment.ReputationScore
+			event.Evidence["enrichment_metadata"] = enrichment.EnrichmentData
+
+			log.Printf("Enriched threat event with intelligence: %s -> %v",
+				event.IOCMatched.Value, enrichment.MalwareFamilies)
 		}
 	}
 }
@@ -1235,7 +1238,7 @@ func (td *ThreatDetector) EnrichThreatEvent(event *ThreatEvent) {
 func (td *ThreatDetector) StartThreatIntelligenceUpdates() {
 	// Update immediately on start
 	go td.updateThreatIntelligence()
-	
+
 	// Schedule periodic updates
 	ticker := time.NewTicker(6 * time.Hour) // Update every 6 hours
 	go func() {
@@ -1243,7 +1246,7 @@ func (td *ThreatDetector) StartThreatIntelligenceUpdates() {
 			td.updateThreatIntelligence()
 		}
 	}()
-	
+
 	log.Println("Threat intelligence updates started (every 6 hours)")
 }
 
@@ -1258,18 +1261,18 @@ func (td *ThreatDetector) GetAlertChannel() <-chan ThreatAlert {
 func (td *ThreatDetector) SendThreatAlert(alert ThreatAlert) {
 	// Enrich alert with additional context
 	td.enrichThreatAlert(&alert)
-	
+
 	// Send to alert channel (non-blocking)
 	select {
 	case td.alertChannel <- alert:
-		log.Printf("Threat alert sent: %s (Severity: %s)", alert.Title, alert.Severity)
+		log.Printf("Threat alert sent: %s (Severity: %s)", alert.Description, alert.Severity)
 	default:
-		log.Printf("Alert channel full, dropping alert: %s", alert.Title)
+		log.Printf("Alert channel full, dropping alert: %s", alert.Description)
 	}
-	
+
 	// Store alert in history
 	td.storeAlertHistory(alert)
-	
+
 	// Trigger immediate notifications for critical alerts
 	if alert.Severity == "critical" {
 		go td.sendImmediateNotification(alert)
@@ -1282,31 +1285,33 @@ func (td *ThreatDetector) enrichThreatAlert(alert *ThreatAlert) {
 	if alert.Metadata == nil {
 		alert.Metadata = make(map[string]interface{})
 	}
-	
+
 	alert.Metadata["alert_id"] = fmt.Sprintf("alert-%d", time.Now().UnixNano())
 	alert.Metadata["detection_engine"] = "MW-ThreatDetector"
 	alert.Metadata["alert_version"] = "1.0"
-	
+
 	// Add threat intelligence context if available
-	if alert.IOCMatched != nil {
-		if enrichment, exists := td.enrichmentCache[alert.IOCMatched.Value]; exists {
-			alert.Metadata["threat_family"] = enrichment.ThreatFamily
-			alert.Metadata["attribution"] = enrichment.Attribution
-			alert.Metadata["confidence"] = enrichment.Confidence
+	if alert.IOC != nil {
+		if enrichment, exists := td.enrichmentCache[alert.IOC.Value]; exists {
+			alert.Metadata["threat_family"] = enrichment.MalwareFamilies
+			alert.Metadata["attribution"] = enrichment.EnrichmentData["attribution"]
+			alert.Metadata["confidence"] = enrichment.ReputationScore
 		}
 	}
-	
-	// Calculate risk score
-	alert.RiskScore = td.calculateRiskScore(alert)
-	
-	// Add recommended actions
-	alert.RecommendedActions = td.generateRecommendedActions(alert)
+
+	// Calculate risk score and store in metadata
+	riskScore := td.calculateRiskScore(alert)
+	alert.Metadata["risk_score"] = riskScore
+
+	// Add recommended actions to metadata
+	recommendedActions := td.generateRecommendedActions(alert)
+	alert.Metadata["recommended_actions"] = recommendedActions
 }
 
 // calculateRiskScore calculates a risk score for the alert
 func (td *ThreatDetector) calculateRiskScore(alert *ThreatAlert) float64 {
 	baseScore := 0.0
-	
+
 	// Base score by severity
 	switch strings.ToLower(alert.Severity) {
 	case "critical":
@@ -1320,12 +1325,14 @@ func (td *ThreatDetector) calculateRiskScore(alert *ThreatAlert) float64 {
 	case "info":
 		baseScore = 1.0
 	}
-	
-	// Adjust based on confidence
-	if alert.Confidence > 0 {
-		baseScore *= alert.Confidence
+
+	// Adjust based on confidence (use IOC confidence if available)
+	confidence := 1.0
+	if alert.IOC != nil {
+		confidence = float64(alert.IOC.Confidence)
 	}
-	
+	baseScore *= confidence
+
 	// Adjust based on threat family
 	if threatFamily, exists := alert.Metadata["threat_family"]; exists {
 		switch threatFamily {
@@ -1337,19 +1344,19 @@ func (td *ThreatDetector) calculateRiskScore(alert *ThreatAlert) float64 {
 			baseScore += 0.6
 		}
 	}
-	
+
 	// Cap at 10.0
 	if baseScore > 10.0 {
 		baseScore = 10.0
 	}
-	
+
 	return baseScore
 }
 
 // generateRecommendedActions generates recommended actions for the alert
 func (td *ThreatDetector) generateRecommendedActions(alert *ThreatAlert) []string {
 	var actions []string
-	
+
 	// Base actions by severity
 	switch strings.ToLower(alert.Severity) {
 	case "critical":
@@ -1367,10 +1374,10 @@ func (td *ThreatDetector) generateRecommendedActions(alert *ThreatAlert) []strin
 		actions = append(actions, "Schedule investigation within 24 hours")
 		actions = append(actions, "Add to monitoring watchlist")
 	}
-	
+
 	// Specific actions based on threat type
-	if alert.IOCMatched != nil {
-		switch alert.IOCMatched.Type {
+	if alert.IOC != nil {
+		switch alert.IOC.Type {
 		case "file_hash":
 			actions = append(actions, "Quarantine suspicious file")
 			actions = append(actions, "Run full system antivirus scan")
@@ -1385,7 +1392,7 @@ func (td *ThreatDetector) generateRecommendedActions(alert *ThreatAlert) []strin
 			actions = append(actions, "Update file monitoring rules")
 		}
 	}
-	
+
 	// Actions based on threat family
 	if threatFamily, exists := alert.Metadata["threat_family"]; exists {
 		switch threatFamily {
@@ -1399,7 +1406,7 @@ func (td *ThreatDetector) generateRecommendedActions(alert *ThreatAlert) []strin
 			actions = append(actions, "Review privileged account activity")
 		}
 	}
-	
+
 	return actions
 }
 
@@ -1407,13 +1414,13 @@ func (td *ThreatDetector) generateRecommendedActions(alert *ThreatAlert) []strin
 func (td *ThreatDetector) storeAlertHistory(alert ThreatAlert) {
 	td.mutex.Lock()
 	defer td.mutex.Unlock()
-	
+
 	// Add to alert history (keep last 1000 alerts)
 	td.alertHistory = append(td.alertHistory, alert)
 	if len(td.alertHistory) > 1000 {
 		td.alertHistory = td.alertHistory[1:]
 	}
-	
+
 	// Update alert statistics
 	td.updateAlertStatistics(alert)
 }
@@ -1423,7 +1430,7 @@ func (td *ThreatDetector) updateAlertStatistics(alert ThreatAlert) {
 	if td.alertStats == nil {
 		td.alertStats = make(map[string]interface{})
 	}
-	
+
 	// Update counters
 	totalKey := "total_alerts"
 	if count, exists := td.alertStats[totalKey]; exists {
@@ -1431,7 +1438,7 @@ func (td *ThreatDetector) updateAlertStatistics(alert ThreatAlert) {
 	} else {
 		td.alertStats[totalKey] = 1
 	}
-	
+
 	// Update severity counters
 	severityKey := fmt.Sprintf("alerts_%s", strings.ToLower(alert.Severity))
 	if count, exists := td.alertStats[severityKey]; exists {
@@ -1439,35 +1446,42 @@ func (td *ThreatDetector) updateAlertStatistics(alert ThreatAlert) {
 	} else {
 		td.alertStats[severityKey] = 1
 	}
-	
+
 	// Update last alert time
 	td.alertStats["last_alert_time"] = alert.Timestamp
 }
 
 // sendImmediateNotification sends immediate notification for critical alerts
 func (td *ThreatDetector) sendImmediateNotification(alert ThreatAlert) {
-	log.Printf("CRITICAL ALERT: %s", alert.Title)
+	log.Printf("CRITICAL ALERT: %s", alert.Description)
 	log.Printf("Description: %s", alert.Description)
-	log.Printf("Risk Score: %.1f", alert.RiskScore)
-	
+
+	riskScore := 0.0
+	if score, exists := alert.Metadata["risk_score"]; exists {
+		if scoreFloat, ok := score.(float64); ok {
+			riskScore = scoreFloat
+		}
+	}
+	log.Printf("Risk Score: %.1f", riskScore)
+
 	// In a real implementation, this would:
 	// - Send email notifications
 	// - Send SMS alerts
 	// - Trigger SIEM integration
 	// - Update security dashboard
 	// - Create incident tickets
-	
+
 	// Simulate notification delivery
 	notification := map[string]interface{}{
-		"type":        "critical_threat_alert",
-		"alert_id":    alert.Metadata["alert_id"],
-		"title":       alert.Title,
-		"severity":    alert.Severity,
-		"risk_score":  alert.RiskScore,
-		"timestamp":   alert.Timestamp,
-		"actions":     alert.RecommendedActions,
+		"type":       "critical_threat_alert",
+		"alert_id":   alert.Metadata["alert_id"],
+		"title":      alert.Description,
+		"severity":   alert.Severity,
+		"risk_score": riskScore,
+		"timestamp":  alert.Timestamp,
+		"actions":    alert.Metadata["recommended_actions"],
 	}
-	
+
 	log.Printf("Immediate notification sent: %+v", notification)
 }
 
@@ -1475,13 +1489,13 @@ func (td *ThreatDetector) sendImmediateNotification(alert ThreatAlert) {
 func (td *ThreatDetector) GetAlertStatistics() map[string]interface{} {
 	td.mutex.RLock()
 	defer td.mutex.RUnlock()
-	
+
 	// Create a copy to avoid race conditions
 	stats := make(map[string]interface{})
 	for k, v := range td.alertStats {
 		stats[k] = v
 	}
-	
+
 	return stats
 }
 
@@ -1489,31 +1503,31 @@ func (td *ThreatDetector) GetAlertStatistics() map[string]interface{} {
 func (td *ThreatDetector) GetAlertHistory(limit int) []ThreatAlert {
 	td.mutex.RLock()
 	defer td.mutex.RUnlock()
-	
+
 	if limit <= 0 || limit > len(td.alertHistory) {
 		limit = len(td.alertHistory)
 	}
-	
+
 	// Return most recent alerts
 	start := len(td.alertHistory) - limit
 	if start < 0 {
 		start = 0
 	}
-	
+
 	history := make([]ThreatAlert, limit)
 	copy(history, td.alertHistory[start:])
-	
+
 	return history
 }
 
 // StartAlertProcessor starts the alert processing system
 func (td *ThreatDetector) StartAlertProcessor() {
 	log.Println("Starting threat alert processor...")
-	
+
 	// Initialize alert statistics
 	td.alertStats = make(map[string]interface{})
 	td.alertHistory = make([]ThreatAlert, 0)
-	
+
 	// Start alert processing goroutine
 	go func() {
 		for alert := range td.alertChannel {
@@ -1521,21 +1535,28 @@ func (td *ThreatDetector) StartAlertProcessor() {
 			td.processAlert(alert)
 		}
 	}()
-	
+
 	log.Println("Threat alert processor started")
 }
 
 // processAlert processes individual alerts
 func (td *ThreatDetector) processAlert(alert ThreatAlert) {
-	log.Printf("Processing threat alert: %s (Severity: %s, Risk: %.1f)", 
-		alert.Title, alert.Severity, alert.RiskScore)
-	
+	riskScore := 0.0
+	if score, exists := alert.Metadata["risk_score"]; exists {
+		if scoreFloat, ok := score.(float64); ok {
+			riskScore = scoreFloat
+		}
+	}
+
+	log.Printf("Processing threat alert: %s (Severity: %s, Risk: %.1f)",
+		alert.Description, alert.Severity, riskScore)
+
 	// Store in history
 	td.storeAlertHistory(alert)
-	
+
 	// Forward to external systems (SIEM, etc.)
 	td.forwardToExternalSystems(alert)
-	
+
 	// Update threat tracking
 	td.updateThreatTracking(alert)
 }
@@ -1547,22 +1568,22 @@ func (td *ThreatDetector) forwardToExternalSystems(alert ThreatAlert) {
 	// - Security orchestration platforms (SOAR)
 	// - Incident management systems
 	// - Threat intelligence platforms
-	
+
 	log.Printf("Forwarding alert to external systems: %s", alert.Metadata["alert_id"])
 }
 
 // updateThreatTracking updates threat tracking and correlation
 func (td *ThreatDetector) updateThreatTracking(alert ThreatAlert) {
 	// Track related threats and patterns
-	if alert.IOCMatched != nil {
+	if alert.IOC != nil {
 		// Update IOC hit statistics
-		iocKey := fmt.Sprintf("ioc_hits_%s", alert.IOCMatched.Value)
+		iocKey := fmt.Sprintf("ioc_hits_%s", alert.IOC.Value)
 		if td.alertStats[iocKey] == nil {
 			td.alertStats[iocKey] = 0
 		}
 		td.alertStats[iocKey] = td.alertStats[iocKey].(int) + 1
 	}
-	
+
 	// Track threat families
 	if threatFamily, exists := alert.Metadata["threat_family"]; exists {
 		familyKey := fmt.Sprintf("family_%s", strings.ToLower(threatFamily.(string)))
@@ -1570,5 +1591,87 @@ func (td *ThreatDetector) updateThreatTracking(alert ThreatAlert) {
 			td.alertStats[familyKey] = 0
 		}
 		td.alertStats[familyKey] = td.alertStats[familyKey].(int) + 1
+	}
+}
+
+// initializeThreatIntelFeeds initializes default threat intelligence feeds
+func (td *ThreatDetector) initializeThreatIntelFeeds() {
+	// Initialize default threat intelligence feeds
+	defaultFeeds := []ThreatIntelFeed{
+		{
+			ID:              "malware-hashes",
+			Name:            "Malware Hash Feed",
+			Description:     "Known malware file hashes",
+			FeedType:        "malware_hashes",
+			URL:             "https://api.threatintel.com/malware/hashes",
+			UpdateFrequency: 3600, // 1 hour
+			IsEnabled:       true,
+			TotalIndicators: 0,
+		},
+		{
+			ID:              "malicious-ips",
+			Name:            "Malicious IP Feed",
+			Description:     "Known malicious IP addresses",
+			FeedType:        "malicious_ips",
+			URL:             "https://api.threatintel.com/ips/malicious",
+			UpdateFrequency: 1800, // 30 minutes
+			IsEnabled:       true,
+			TotalIndicators: 0,
+		},
+		{
+			ID:              "malicious-domains",
+			Name:            "Malicious Domain Feed",
+			Description:     "Known malicious domains",
+			FeedType:        "malicious_domains",
+			URL:             "https://api.threatintel.com/domains/malicious",
+			UpdateFrequency: 3600, // 1 hour
+			IsEnabled:       true,
+			TotalIndicators: 0,
+		},
+	}
+
+	td.threatIntelFeeds = defaultFeeds
+	log.Printf("Initialized %d threat intelligence feeds", len(defaultFeeds))
+}
+
+// processAlerts processes incoming threat alerts
+func (td *ThreatDetector) processAlerts() {
+	log.Println("Starting threat alert processor...")
+
+	for {
+		select {
+		case alert := <-td.alertChannel:
+			// Process the alert
+			td.handleAlert(alert)
+		case <-td.stopChannel:
+			log.Println("Stopping threat alert processor...")
+			return
+		}
+	}
+}
+
+// handleAlert handles individual threat alerts
+func (td *ThreatDetector) handleAlert(alert ThreatAlert) {
+	log.Printf("Processing threat alert: %s (Severity: %s)", alert.ID, alert.Severity)
+
+	// Update detection statistics
+	td.mutex.Lock()
+	td.detectionStats.TotalDetections++
+	if td.detectionStats.DetectionsByType == nil {
+		td.detectionStats.DetectionsByType = make(map[string]int64)
+	}
+	if td.detectionStats.DetectionsBySeverity == nil {
+		td.detectionStats.DetectionsBySeverity = make(map[string]int64)
+	}
+	td.detectionStats.DetectionsByType[alert.ThreatType]++
+	td.detectionStats.DetectionsBySeverity[alert.Severity]++
+	td.detectionStats.LastDetection = alert.Timestamp
+	td.mutex.Unlock()
+
+	// Forward to alert handlers
+	for _, handler := range td.alertHandlers {
+		if err := handler.HandleAlert(alert); err != nil {
+			log.Printf("Error handling alert with %s: %v", handler.GetType(), err)
+		}
 	}
 }

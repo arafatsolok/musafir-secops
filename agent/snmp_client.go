@@ -108,10 +108,10 @@ var (
 	OIDIfOutDiscards = "1.3.6.1.2.1.2.2.1.19"
 
 	// Cisco-specific OIDs
-	CiscoMemoryPoolUsed  = "1.3.6.1.4.1.9.9.48.1.1.1.5"
-	CiscoMemoryPoolFree  = "1.3.6.1.4.1.9.9.48.1.1.1.6"
-	CiscoCPUUtilization  = "1.3.6.1.4.1.9.9.109.1.1.1.1.7"
-	CiscoTemperature     = "1.3.6.1.4.1.9.9.13.1.3.1.3"
+	CiscoMemoryPoolUsed = "1.3.6.1.4.1.9.9.48.1.1.1.5"
+	CiscoMemoryPoolFree = "1.3.6.1.4.1.9.9.48.1.1.1.6"
+	CiscoCPUUtilization = "1.3.6.1.4.1.9.9.109.1.1.1.1.7"
+	CiscoTemperature    = "1.3.6.1.4.1.9.9.13.1.3.1.3"
 )
 
 // NewSNMPClient creates a new SNMP client
@@ -137,10 +137,10 @@ func (sc *SNMPClient) Start() error {
 	}
 
 	sc.running = true
-	
+
 	// Start device discovery and monitoring
 	go sc.monitorDevices()
-	
+
 	log.Println("SNMP client started")
 	return nil
 }
@@ -182,7 +182,7 @@ func (sc *SNMPClient) pollDevice(ip, community string) {
 	}
 
 	sc.devices[ip] = device
-	
+
 	// Generate SNMP event
 	sc.generateSNMPEvent(device)
 }
@@ -245,7 +245,7 @@ func (sc *SNMPClient) querySystemInfo(conn *gosnmp.GoSNMP, device *NetworkDevice
 	}
 
 	sysInfo := SNMPSystemInfo{}
-	
+
 	for _, variable := range result.Variables {
 		switch variable.Name {
 		case OIDSysDescr:
@@ -298,10 +298,10 @@ func (sc *SNMPClient) queryInterfaces(conn *gosnmp.GoSNMP, device *NetworkDevice
 
 	// Query interface table
 	interfaces := make([]SNMPInterface, 0)
-	
+
 	for i := 1; i <= ifCount; i++ {
 		iface := SNMPInterface{Index: i}
-		
+
 		// Build OIDs for this interface
 		oids := []string{
 			fmt.Sprintf("%s.%d", OIDIfDescr, i),
@@ -410,7 +410,7 @@ func (sc *SNMPClient) queryPerformance(conn *gosnmp.GoSNMP, device *NetworkDevic
 		// Query memory utilization
 		usedResult, err1 := conn.Get([]string{CiscoMemoryPoolUsed + ".1"})
 		freeResult, err2 := conn.Get([]string{CiscoMemoryPoolFree + ".1"})
-		
+
 		if err1 == nil && err2 == nil && len(usedResult.Variables) > 0 && len(freeResult.Variables) > 0 {
 			if used, ok1 := usedResult.Variables[0].Value.(uint32); ok1 {
 				if free, ok2 := freeResult.Variables[0].Value.(uint32); ok2 {
@@ -438,7 +438,7 @@ func (sc *SNMPClient) queryPerformance(conn *gosnmp.GoSNMP, device *NetworkDevic
 // identifyDevice identifies device type and vendor
 func (sc *SNMPClient) identifyDevice(device *NetworkDevice) {
 	desc := strings.ToLower(device.SystemInfo.Description)
-	
+
 	// Identify vendor
 	if strings.Contains(desc, "cisco") {
 		device.Vendor = "Cisco"
@@ -458,7 +458,7 @@ func (sc *SNMPClient) identifyDevice(device *NetworkDevice) {
 
 	// Identify device type based on services and description
 	services := device.SystemInfo.Services
-	
+
 	if strings.Contains(desc, "firewall") || strings.Contains(desc, "asa") || strings.Contains(desc, "palo alto") {
 		device.DeviceType = "firewall"
 	} else if strings.Contains(desc, "router") || (services&64 != 0) { // Layer 3 forwarding
@@ -499,15 +499,15 @@ func (sc *SNMPClient) generateSNMPEvent(device *NetworkDevice) {
 			"severity": 2,
 			"attrs": map[string]interface{}{
 				"device_type":        device.DeviceType,
-				"vendor":            device.Vendor,
-				"model":             device.Model,
-				"version":           device.Version,
-				"uptime":            device.Uptime.Seconds(),
-				"interface_count":   len(device.Interfaces),
-				"cpu_utilization":   device.Performance.CPUUtilization,
+				"vendor":             device.Vendor,
+				"model":              device.Model,
+				"version":            device.Version,
+				"uptime":             device.Uptime.Seconds(),
+				"interface_count":    len(device.Interfaces),
+				"cpu_utilization":    device.Performance.CPUUtilization,
 				"memory_utilization": device.Performance.MemoryUtilization,
-				"temperature":       device.Performance.Temperature,
-				"status":            device.Status,
+				"temperature":        device.Performance.Temperature,
+				"status":             device.Status,
 			},
 		},
 		Ingest: map[string]string{
@@ -520,7 +520,7 @@ func (sc *SNMPClient) generateSNMPEvent(device *NetworkDevice) {
 	// Add interface statistics
 	var totalInOctets, totalOutOctets uint64
 	var activeInterfaces int
-	
+
 	for _, iface := range device.Interfaces {
 		if iface.OperStatus == "up" {
 			activeInterfaces++
@@ -556,16 +556,16 @@ func extractHostname(description string) string {
 
 func getInterfaceType(ifType int) string {
 	types := map[int]string{
-		1:  "other",
-		6:  "ethernetCsmacd",
-		23: "ppp",
-		24: "softwareLoopback",
-		37: "atm",
-		53: "propVirtual",
+		1:   "other",
+		6:   "ethernetCsmacd",
+		23:  "ppp",
+		24:  "softwareLoopback",
+		37:  "atm",
+		53:  "propVirtual",
 		131: "tunnel",
 		161: "ieee80211",
 	}
-	
+
 	if t, exists := types[ifType]; exists {
 		return t
 	}

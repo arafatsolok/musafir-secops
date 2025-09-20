@@ -21,14 +21,14 @@ type OSInfo struct {
 }
 
 type HardwareInfo struct {
-	Manufacturer string    `json:"manufacturer"`
-	Model        string    `json:"model"`
-	SerialNumber string    `json:"serial_number"`
-	CPU          CPUInfo   `json:"cpu"`
-	Memory       MemoryInfo `json:"memory"`
-	Storage      []StorageInfo `json:"storage"`
+	Manufacturer string               `json:"manufacturer"`
+	Model        string               `json:"model"`
+	SerialNumber string               `json:"serial_number"`
+	CPU          CPUInfo              `json:"cpu"`
+	Memory       MemoryInfo           `json:"memory"`
+	Storage      []StorageInfo        `json:"storage"`
 	Network      []NetworkAdapterInfo `json:"network"`
-	BIOS         BIOSInfo  `json:"bios"`
+	BIOS         BIOSInfo             `json:"bios"`
 }
 
 type CPUInfo struct {
@@ -45,10 +45,10 @@ type CPUInfo struct {
 }
 
 type MemoryInfo struct {
-	Total     uint64  `json:"total_bytes"`
-	Available uint64  `json:"available_bytes"`
-	Used      uint64  `json:"used_bytes"`
-	Usage     float64 `json:"usage_percent"`
+	Total     uint64       `json:"total_bytes"`
+	Available uint64       `json:"available_bytes"`
+	Used      uint64       `json:"used_bytes"`
+	Usage     float64      `json:"usage_percent"`
 	Slots     []MemorySlot `json:"slots"`
 }
 
@@ -72,14 +72,14 @@ type StorageInfo struct {
 }
 
 type NetworkAdapterInfo struct {
-	Name         string   `json:"name"`
-	Type         string   `json:"type"`
-	MACAddress   string   `json:"mac_address"`
-	IPAddresses  []string `json:"ip_addresses"`
-	Status       string   `json:"status"`
-	Speed        uint64   `json:"speed_mbps"`
-	Duplex       string   `json:"duplex"`
-	MTU          int      `json:"mtu"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	MACAddress  string   `json:"mac_address"`
+	IPAddresses []string `json:"ip_addresses"`
+	Status      string   `json:"status"`
+	Speed       uint64   `json:"speed_mbps"`
+	Duplex      string   `json:"duplex"`
+	MTU         int      `json:"mtu"`
 }
 
 type BIOSInfo struct {
@@ -111,20 +111,20 @@ type ServiceInfo struct {
 }
 
 type ProcessInfo struct {
-	PID          uint32    `json:"pid"`
-	PPID         uint32    `json:"ppid"`
-	Name         string    `json:"name"`
-	Path         string    `json:"path"`
-	CommandLine  string    `json:"command_line"`
-	User         string    `json:"user"`
-	StartTime    time.Time `json:"start_time"`
-	CPUUsage     float64   `json:"cpu_usage"`
-	MemoryUsage  uint64    `json:"memory_usage"`
-	ThreadCount  int       `json:"thread_count"`
-	HandleCount  int       `json:"handle_count"`
-	Status       string    `json:"status"`
-	Priority     int       `json:"priority"`
-	Architecture string    `json:"architecture"`
+	PID          uint32       `json:"pid"`
+	PPID         uint32       `json:"ppid"`
+	Name         string       `json:"name"`
+	Path         string       `json:"path"`
+	CommandLine  string       `json:"command_line"`
+	User         string       `json:"user"`
+	StartTime    time.Time    `json:"start_time"`
+	CPUUsage     float64      `json:"cpu_usage"`
+	MemoryUsage  uint64       `json:"memory_usage"`
+	ThreadCount  int          `json:"thread_count"`
+	HandleCount  int          `json:"handle_count"`
+	Status       string       `json:"status"`
+	Priority     int          `json:"priority"`
+	Architecture string       `json:"architecture"`
 	Modules      []ModuleInfo `json:"modules"`
 }
 
@@ -198,30 +198,30 @@ type RegistryKey struct {
 
 // File system structures
 type FileInfo struct {
-	Path         string            `json:"path"`
-	Name         string            `json:"name"`
-	Size         int64             `json:"size"`
-	Mode         string            `json:"mode"`
-	ModTime      time.Time         `json:"mod_time"`
-	IsDir        bool              `json:"is_dir"`
-	Hash         string            `json:"hash"`
-	Owner        string            `json:"owner"`
-	Permissions  []string          `json:"permissions"`
-	Attributes   []string          `json:"attributes"`
-	Metadata     map[string]string `json:"metadata"`
+	Path        string            `json:"path"`
+	Name        string            `json:"name"`
+	Size        int64             `json:"size"`
+	Mode        string            `json:"mode"`
+	ModTime     time.Time         `json:"mod_time"`
+	IsDir       bool              `json:"is_dir"`
+	Hash        string            `json:"hash"`
+	Owner       string            `json:"owner"`
+	Permissions []string          `json:"permissions"`
+	Attributes  []string          `json:"attributes"`
+	Metadata    map[string]string `json:"metadata"`
 }
 
 // Event log structures
 type EventLogEntry struct {
-	ID          uint64                 `json:"id"`
-	Source      string                 `json:"source"`
-	Level       string                 `json:"level"`
-	EventID     uint32                 `json:"event_id"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Message     string                 `json:"message"`
-	Computer    string                 `json:"computer"`
-	User        string                 `json:"user"`
-	Category    string                 `json:"category"`
-	Keywords    []string               `json:"keywords"`
-	Data        map[string]interface{} `json:"data"`
+	ID        uint64                 `json:"id"`
+	Source    string                 `json:"source"`
+	Level     string                 `json:"level"`
+	EventID   uint32                 `json:"event_id"`
+	Timestamp time.Time              `json:"timestamp"`
+	Message   string                 `json:"message"`
+	Computer  string                 `json:"computer"`
+	User      string                 `json:"user"`
+	Category  string                 `json:"category"`
+	Keywords  []string               `json:"keywords"`
+	Data      map[string]interface{} `json:"data"`
 }

@@ -98,14 +98,14 @@ func postWithRetry(client *http.Client, url string, data []byte) error {
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		// Add Agent ID and HMAC signature headers for controller authentication
 		agentID := strings.TrimSpace(os.Getenv("AGENT_ID"))
 		agentHMAC := strings.TrimSpace(os.Getenv("AGENT_HMAC"))
-		
+
 		if agentID != "" && agentHMAC != "" {
 			req.Header.Set("X-Agent-ID", agentID)
-			
+
 			// Create HMAC signature of the request body
 			mac := hmac.New(sha256.New, []byte(agentHMAC))
 			mac.Write(data)
@@ -115,12 +115,12 @@ func postWithRetry(client *http.Client, url string, data []byte) error {
 			// Fallback to legacy timestamp-based HMAC for backward compatibility
 			ts := time.Now().UTC().Format(time.RFC3339)
 			req.Header.Set("X-Timestamp", ts)
-			
+
 			secret := strings.TrimSpace(os.Getenv("AGENT_HMAC_SECRET"))
 			if secret == "" {
 				secret = "default-hmac-secret-for-demo" // Default for demo purposes
 			}
-			
+
 			// Create HMAC with timestamp + body
 			mac := hmac.New(sha256.New, []byte(secret))
 			mac.Write([]byte(ts))

@@ -18,7 +18,7 @@ func init() {
 func generateDarwinEvent() Envelope {
 	// Simulate macOS-specific telemetry
 	hostname, _ := os.Hostname()
-	
+
 	return Envelope{
 		Ts:       time.Now().UTC().Format(time.RFC3339),
 		TenantID: "t-aci",

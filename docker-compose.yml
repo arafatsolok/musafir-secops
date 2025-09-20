@@ -1,0 +1,106 @@
+services:
+  # ClickHouse Database
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: musafir-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: musafir_secops
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d
+    networks:
+      - musafir-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend Controller
+  backend:
+    build:
+      context: ./controller
+      dockerfile: Dockerfile
+    container_name: musafir-backend
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USERNAME: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DATABASE: musafir_secops
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      JWT_EXPIRES_IN: 24h
+      JWT_REFRESH_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS: 12
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - musafir-network
+    volumes:
+      - ./controller/logs:/app/logs
+    restart: unless-stopped
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./controller/frontend
+      dockerfile: Dockerfile
+    container_name: musafir-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=http://backend:3001
+    depends_on:
+      - backend
+    networks:
+      - musafir-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Agent (Optional - for development/testing)
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: musafir-agent
+    environment:
+      CONTROLLER_URL: http://backend:3001
+      AGENT_ID: docker-agent-001
+    depends_on:
+      - backend
+    networks:
+      - musafir-network
+    volumes:
+      - /var/log:/host/var/log:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    privileged: true
+    restart: unless-stopped
+    profiles:
+      - agent
+
+networks:
+  musafir-network:
+    driver: bridge
+
+volumes:
+  clickhouse_data:
+    driver: local

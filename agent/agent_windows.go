@@ -132,6 +132,14 @@ func initializeMonitoring() error {
 	// Initialize threat detector
 	threatDetector = NewThreatDetector()
 	
+	// Start threat intelligence updates
+	threatDetector.StartThreatIntelligenceUpdates()
+	
+	// Start alert processing system
+	threatDetector.StartAlertProcessor()
+	
+	log.Println("Threat detection system initialized and started")
+	
 	// Initialize query engine
 	queryEngine = NewQueryEngine(10000)
 	
@@ -188,6 +196,11 @@ func startMonitoring(controllerURL string) {
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
 				
+				// Analyze for threats
+				if threatEvent := analyzeEventForThreats(event); threatEvent != nil {
+					handleThreatEvent(threatEvent, gatewayURL)
+				}
+				
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
 				envelope.Event = eventMap
@@ -217,6 +230,11 @@ func startMonitoring(controllerURL string) {
 				
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
+				
+				// Analyze for threats
+				if threatEvent := analyzeNetworkEventForThreats(event); threatEvent != nil {
+					handleThreatEvent(threatEvent, gatewayURL)
+				}
 				
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
@@ -248,6 +266,11 @@ func startMonitoring(controllerURL string) {
 				
 				// Process through all analytics engines
 				processEventThroughAllAnalytics(eventMap)
+				
+				// Analyze for threats
+				if threatEvent := analyzeFileEventForThreats(event); threatEvent != nil {
+					handleThreatEvent(threatEvent, gatewayURL)
+				}
 				
 				// Forward to gateway
 				envelope := generateEnhancedWindowsEvent()
@@ -488,4 +511,158 @@ func main() {
 	stopMonitoring()
 	
 	log.Println("MUSAFIR Enhanced Agent stopped successfully")
+}
+
+// Threat detection integration functions
+func analyzeEventForThreats(event ProcessEvent) *ThreatEvent {
+	if threatDetector == nil {
+		return nil
+	}
+	
+	// Convert ProcessEvent to ProcessInfo for threat analysis
+	processInfo := &ProcessInfo{
+		PID:         event.ProcessInfo.PID,
+		PPID:        event.ProcessInfo.PPID,
+		Name:        event.ProcessInfo.Name,
+		Path:        event.ProcessInfo.Path,
+		CommandLine: event.ProcessInfo.CommandLine,
+		User:        event.ProcessInfo.User,
+		StartTime:   event.ProcessInfo.StartTime,
+		Modules:     event.ProcessInfo.Modules,
+	}
+	
+	return threatDetector.AnalyzeProcess(processInfo)
+}
+
+func analyzeNetworkEventForThreats(event NetworkEvent) *ThreatEvent {
+	if threatDetector == nil {
+		return nil
+	}
+	
+	// Convert NetworkEvent to ConnectionInfo for threat analysis
+	connectionInfo := &ConnectionInfo{
+		LocalAddress:  event.ConnectionInfo.LocalAddress,
+		LocalPort:     event.ConnectionInfo.LocalPort,
+		RemoteAddress: event.ConnectionInfo.RemoteAddress,
+		RemotePort:    event.ConnectionInfo.RemotePort,
+		Protocol:      event.ConnectionInfo.Protocol,
+		State:         event.ConnectionInfo.State,
+		Direction:     event.ConnectionInfo.Direction,
+		BytesSent:     event.ConnectionInfo.BytesSent,
+		BytesReceived: event.ConnectionInfo.BytesReceived,
+	}
+	
+	return threatDetector.AnalyzeNetwork(connectionInfo)
+}
+
+func analyzeFileEventForThreats(event FileEvent) *ThreatEvent {
+	if threatDetector == nil {
+		return nil
+	}
+	
+	// Convert FileEvent to FileInfo for threat analysis
+	fileInfo := &FileInfo{
+		Path:         event.FileInfo.Path,
+		Name:         event.FileInfo.Name,
+		Size:         event.FileInfo.Size,
+		Hash:         event.FileInfo.Hash,
+		Permissions:  event.FileInfo.Permissions,
+		Owner:        event.FileInfo.Owner,
+		CreatedTime:  event.FileInfo.CreatedTime,
+		ModifiedTime: event.FileInfo.ModifiedTime,
+		AccessedTime: event.FileInfo.AccessedTime,
+	}
+	
+	return threatDetector.AnalyzeFile(fileInfo)
+}
+
+func handleThreatEvent(threatEvent *ThreatEvent, gatewayURL string) {
+	if threatEvent == nil {
+		return
+	}
+	
+	// Log the threat detection
+	log.Printf("THREAT DETECTED: %s - %s (Confidence: %.2f)", 
+		threatEvent.EventType, threatEvent.ThreatLevel, threatEvent.Confidence)
+	
+	// Create threat alert
+	alert := ThreatAlert{
+		ID:          fmt.Sprintf("alert-%d", time.Now().Unix()),
+		Timestamp:   time.Now(),
+		ThreatType:  threatEvent.EventType,
+		Severity:    threatEvent.ThreatLevel,
+		Description: generateThreatDescription(threatEvent),
+		Source:      "musafir-agent",
+		Event:       threatEvent.Evidence,
+		Metadata: map[string]interface{}{
+			"confidence":    threatEvent.Confidence,
+			"detection_time": threatEvent.Timestamp,
+		},
+	}
+	
+	// Add IOC or rule information
+	if threatEvent.IOCMatched != nil {
+		alert.IOC = threatEvent.IOCMatched
+		alert.Description = fmt.Sprintf("IOC Match: %s (%s)", 
+			threatEvent.IOCMatched.Value, threatEvent.IOCMatched.Type)
+	}
+	
+	if threatEvent.BehaviorRule != nil {
+		alert.Rule = threatEvent.BehaviorRule
+		alert.Description = fmt.Sprintf("Behavior Rule: %s", 
+			threatEvent.BehaviorRule.Name)
+	}
+	
+	// Send alert to gateway
+	envelope := generateEnhancedWindowsEvent()
+	envelope.Event = map[string]interface{}{
+		"class":        "security",
+		"name":         "threat_alert",
+		"severity":     getSeverityNumber(threatEvent.ThreatLevel),
+		"threat_alert": alert,
+		"threat_event": threatEvent,
+	}
+	
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		log.Printf("Error marshaling threat alert: %v", err)
+		return
+	}
+	
+	sendEventToGateway(gatewayURL, data)
+	log.Printf("Threat alert sent to gateway: %s", alert.ID)
+}
+
+func generateThreatDescription(threatEvent *ThreatEvent) string {
+	switch threatEvent.EventType {
+	case "ioc_match":
+		if threatEvent.IOCMatched != nil {
+			return fmt.Sprintf("Detected IOC: %s (%s) - %s", 
+				threatEvent.IOCMatched.Value, 
+				threatEvent.IOCMatched.Type,
+				threatEvent.IOCMatched.Description)
+		}
+	case "behavioral_detection":
+		if threatEvent.BehaviorRule != nil {
+			return fmt.Sprintf("Suspicious behavior detected: %s - %s", 
+				threatEvent.BehaviorRule.Name,
+				threatEvent.BehaviorRule.Description)
+		}
+	}
+	return "Unknown threat detected"
+}
+
+func getSeverityNumber(severity string) int {
+	switch strings.ToLower(severity) {
+	case "critical":
+		return 1
+	case "high":
+		return 2
+	case "medium":
+		return 3
+	case "low":
+		return 4
+	default:
+		return 5
+	}
 }
